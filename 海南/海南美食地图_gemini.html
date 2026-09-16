@@ -1,0 +1,4566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>海南自由行 · 美食与景点地图 (高德原生版)</title>
+  
+  <!-- 高德地图官方 JS API 2.0 安全配置与 SDK 引入 -->
+  <script type="text/javascript">
+    window._AMapSecurityConfig = {
+      securityJsCode: '591a55751bc5e1fb0d3a0b785479cccc'
+    };
+  </script>
+  <script type="text/javascript">
+    // 统计高德底图瓦片请求。SDK 能加载但底图瓦片被网络拦截时，需要切换到离线概览。
+    window.__amapTileStats = { success: 0, failure: 0, lastFailure: '' };
+    (function() {
+      const isAmapTile = (url) => /(?:amap\.com\/tile|jsapi-data\d*\.amap\.com)/.test(String(url || ''));
+
+      const originalFetch = window.fetch;
+      if (originalFetch) {
+        window.fetch = function(input, init) {
+          const url = typeof input === 'string' ? input : (input && input.url);
+          const isTile = isAmapTile(url);
+          return originalFetch.call(this, input, init).then((response) => {
+            if (isTile) {
+              if (response.ok) window.__amapTileStats.success += 1;
+              else {
+                window.__amapTileStats.failure += 1;
+                window.__amapTileStats.lastFailure = url;
+              }
+            }
+            return response;
+          }).catch((error) => {
+            if (isTile) {
+              window.__amapTileStats.failure += 1;
+              window.__amapTileStats.lastFailure = url || '';
+            }
+            throw error;
+          });
+        };
+      }
+
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function(method, url) {
+        this.__amapTileRequest = isAmapTile(url);
+        this.__amapTileUrl = String(url || '');
+        return originalOpen.apply(this, arguments);
+      };
+      XMLHttpRequest.prototype.send = function() {
+        if (this.__amapTileRequest) {
+          this.addEventListener('loadend', () => {
+            if (this.status >= 200 && this.status < 400) {
+              window.__amapTileStats.success += 1;
+            } else {
+              window.__amapTileStats.failure += 1;
+              window.__amapTileStats.lastFailure = this.__amapTileUrl;
+            }
+          }, { once: true });
+        }
+        return originalSend.apply(this, arguments);
+      };
+    })();
+  </script>
+  <script
+    id="amap-sdk"
+    type="text/javascript"
+    src="https://webapi.amap.com/maps?v=2.0&key=2edbe6b49f5ac5c28260a3c5582b911c&plugin=AMap.Geolocation"
+    onerror="window.__amapLoadFailed = true;"
+  ></script>
+
+  <style>
+    /* ==========================================================================
+       移动端优先 · 设计规范：Notion / Linear 风格纯色极简扁平化体系
+       深度适配 iPhone 灵动岛/刘海屏及 Android 全面屏手势安全区
+       ========================================================================== */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+
+      --bg-primary: #ffffff;
+      --bg-secondary: #f7f7f5;
+      --bg-tertiary: #f0f0ee;
+      --bg-active: #e9e9e6;
+      --text-primary: #191919;
+      --text-secondary: #5a5a5a;
+      --text-muted: #6b6b6b;
+      --border-color: #e3e2e0;
+      --border-dark: #191919;
+      
+      /* 功能色彩：纯色无渐变 */
+      --color-black: #191919;
+      --color-blue: #0969da;
+      --color-blue-bg: #edf5ff;
+      --color-orange: #bc4c00;
+      --color-orange-bg: #fff1e5;
+      --color-green: #1a7f37;
+      --color-green-bg: #dafbe1;
+      --color-purple: #8250df;
+      --color-purple-bg: #fbefff;
+      --color-spot: #24292f;
+      --color-spot-bg: #f6f8fa;
+      
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:focus-visible,
+    a:focus-visible,
+    input:focus-visible {
+      outline: 2px solid var(--color-blue);
+      outline-offset: 2px;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      touch-action: manipulation;
+      -webkit-text-size-adjust: 100%;
+      font-family: var(--font-family);
+      color: var(--text-primary);
+      background-color: var(--bg-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    #app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 顶部导航与操作栏（自适应全面屏安全区） */
+    .top-header {
+      position: relative;
+      z-index: 1000;
+      background-color: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      padding: calc(6px + var(--safe-top)) calc(12px + var(--safe-right)) 6px calc(12px + var(--safe-left));
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .header-main-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .app-title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .app-title-group h1 {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .app-title-group .tag-native {
+      font-size: 10px;
+      font-weight: 600;
+      color: #0969da;
+      background: #edf5ff;
+      border: 1px solid #c8e1ff;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* 模式切换胶囊 (纯色扁平 Linear 风格) */
+    .mode-switcher {
+      display: flex;
+      background-color: var(--bg-tertiary);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .mode-tab {
+      border: none;
+      background: transparent;
+      min-height: 44px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .mode-tab.active {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    }
+
+    /* 搜索与快捷过滤行 */
+    .header-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 2px;
+    }
+    .header-filter-row::-webkit-scrollbar {
+      display: none;
+    }
+
+    .search-box-wrap {
+      position: relative;
+      flex-shrink: 0;
+      width: 140px;
+      transition: width 0.2s ease;
+    }
+    .search-box-wrap:focus-within {
+      width: 190px;
+    }
+
+    .search-input {
+      width: 100%;
+      height: 44px;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0 24px 0 24px;
+      font-size: 12px;
+      color: var(--text-primary);
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: var(--border-dark);
+      background-color: var(--bg-primary);
+    }
+    .search-icon {
+      position: absolute;
+      left: 7px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 11px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+    .search-clear {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 12px;
+      color: var(--text-muted);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: none;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+    }
+
+    .filter-pills-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .filter-pill {
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-primary);
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 500;
+      min-height: 44px;
+      padding: 6px 12px;
+      border-radius: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.12s ease;
+    }
+
+    .filter-pill.active {
+      background-color: var(--color-black);
+      border-color: var(--color-black);
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    /* 地图容器 */
+    #map-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* 高德瓦片不可用时，画布下方仍保留一张轻量离线底图，避免手机端出现纯空白。 */
+    #map-container::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      background-color: #eaf3f6;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 1000'%3E%3Crect width='800' height='1000' fill='%23eaf3f6'/%3E%3Cpath d='M424 70 C494 42 575 86 611 154 C646 220 620 287 659 353 C700 423 754 476 750 552 C745 642 689 716 611 760 C531 805 439 786 375 730 C313 676 277 610 245 540 C211 466 203 382 248 315 C289 253 364 226 381 166 C391 123 391 86 424 70 Z' fill='%23f7f3e8' stroke='%23c9c0ae' stroke-width='7'/%3E%3Cpath d='M320 328 C396 354 470 363 562 340' fill='none' stroke='%23ddd3bf' stroke-width='9' stroke-linecap='round'/%3E%3Cpath d='M340 470 C424 505 512 512 617 476' fill='none' stroke='%23ddd3bf' stroke-width='9' stroke-linecap='round'/%3E%3Cpath d='M401 228 C426 338 439 474 428 622' fill='none' stroke='%23e1d8c8' stroke-width='7' stroke-linecap='round'/%3E%3Cpath d='M555 234 C535 350 529 482 552 650' fill='none' stroke='%23e1d8c8' stroke-width='7' stroke-linecap='round'/%3E%3Cg fill='%23b6aca0'%3E%3Ccircle cx='536' cy='244' r='9'/%3E%3Ccircle cx='558' cy='398' r='9'/%3E%3Ccircle cx='445' cy='654' r='9'/%3E%3Ccircle cx='421' cy='286' r='9'/%3E%3C/g%3E%3C/svg%3E");
+      background-size: cover;
+      background-position: center;
+    }
+
+    #map {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      background-color: transparent;
+    }
+
+    /* 透明叠加层位于瓦片画布之上、Marker 之下；在线瓦片可用时仅作极淡地理参照。 */
+    #map-container::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      pointer-events: none;
+      opacity: 0.16;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 1000'%3E%3Cpath d='M424 70 C494 42 575 86 611 154 C646 220 620 287 659 353 C700 423 754 476 750 552 C745 642 689 716 611 760 C531 805 439 786 375 730 C313 676 277 610 245 540 C211 466 203 382 248 315 C289 253 364 226 381 166 C391 123 391 86 424 70 Z' fill='%23c8bda9'/%3E%3Cpath d='M320 328 C396 354 470 363 562 340' fill='none' stroke='%23ffffff' stroke-width='10' stroke-linecap='round'/%3E%3Cpath d='M340 470 C424 505 512 512 617 476' fill='none' stroke='%23ffffff' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-size: cover;
+      background-position: center;
+    }
+
+    /* 右下侧悬浮操作组 (FAB) */
+    .fab-group {
+      position: absolute;
+      right: calc(12px + var(--safe-right));
+      bottom: calc(48vh + 14px + var(--safe-bottom));
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: bottom 0.25s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.2s ease;
+    }
+
+    .fab-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.12s, transform 0.1s;
+    }
+    .fab-btn:active {
+      background-color: var(--bg-tertiary);
+      transform: scale(0.95);
+    }
+    .fab-btn.primary {
+      background-color: var(--color-black);
+      border-color: var(--color-black);
+      color: #ffffff;
+    }
+
+    /* 选中景点通知横幅 */
+    .spot-banner {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      right: 12px;
+      z-index: 999;
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      padding: 8px 12px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      animation: slideDown 0.2s ease;
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .spot-banner-text {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .spot-banner-btn {
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      min-height: 44px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+
+    /* 移动端底部自适应抽屉 (Bottom Sheet) */
+    .bottom-drawer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1001;
+      background-color: var(--bg-primary);
+      border-top: 1px solid var(--border-color);
+      border-top-left-radius: 12px;
+      border-top-right-radius: 12px;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      transition: height 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+      will-change: height;
+    }
+
+    /* 抽屉三档高度 */
+    .bottom-drawer.collapsed {
+      height: calc(76px + var(--safe-bottom));
+    }
+    .bottom-drawer.half {
+      height: calc(48vh + var(--safe-bottom));
+    }
+    .bottom-drawer.expanded {
+      height: calc(88vh + var(--safe-bottom));
+    }
+
+    .drawer-handle-bar {
+      width: 100%;
+      padding: 7px 0 3px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    .drawer-handle-pill {
+      width: 36px;
+      height: 4px;
+      background-color: #d0d0ce;
+      border-radius: 2px;
+    }
+
+    .drawer-header {
+      padding: 4px 14px 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--bg-secondary);
+    }
+
+    .drawer-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .drawer-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .drawer-count {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+
+    .drawer-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .drawer-list {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 8px 12px calc(16px + var(--safe-bottom)) 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 卡片体系 (纯色扁平 Notion / Linear 风格) */
+    .item-card {
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: all 0.12s ease;
+      cursor: pointer;
+    }
+
+    .item-card:hover {
+      background-color: var(--bg-secondary);
+    }
+
+    .item-card.active {
+      border-color: var(--color-black);
+      background-color: var(--bg-secondary);
+      box-shadow: inset 0 0 0 1px var(--color-black);
+    }
+
+    .item-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .item-card-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+    }
+
+    .badge-id {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      background-color: var(--color-black);
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .badge-spot {
+      background-color: var(--color-spot);
+    }
+
+    .item-card-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.3;
+    }
+
+    .item-card-tags {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .tag-pill {
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .tag-hk { background-color: var(--color-blue-bg); color: var(--color-blue); }
+    .tag-wc { background-color: var(--color-orange-bg); color: var(--color-orange); }
+    .tag-sy { background-color: var(--color-purple-bg); color: var(--color-purple); }
+    .tag-lg { background-color: var(--color-green-bg); color: var(--color-green); }
+    .tag-spot { background-color: var(--color-spot-bg); color: var(--color-spot); }
+
+    .tag-src-rsj { background-color: #f0f0ee; color: #5a5a5a; }
+    .tag-src-self { background-color: #e6ffed; color: #1a7f37; }
+    .tag-src-web { background-color: #edf5ff; color: #0969da; }
+    .tag-src-xhs { background-color: #fff0f5; color: #b4234a; }
+    .tag-src-dp { background-color: #fff8e6; color: #7a5d00; }
+    .tag-src-hot { background-color: #fbefff; color: #8250df; }
+    .tag-src-dy { background-color: #f0f7ff; color: #0550ae; border: 1px solid #c8e1ff; }
+
+    .item-card-desc {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .item-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px dashed var(--border-color);
+      font-size: 11px;
+    }
+
+    .distance-indicator {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .distance-indicator.close {
+      color: var(--color-green);
+      font-weight: 600;
+    }
+    .distance-indicator.far {
+      color: var(--text-muted);
+    }
+
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mini-btn {
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      min-height: 44px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      transition: background-color 0.1s;
+    }
+    .mini-btn:active {
+      background-color: var(--bg-active);
+    }
+    .mini-btn.primary {
+      background-color: var(--color-black);
+      border-color: var(--color-black);
+      color: #ffffff;
+    }
+    .mini-btn.amap-link {
+      background-color: #edf5ff;
+      border-color: #c8e1ff;
+      color: #0969da;
+    }
+    .mini-btn.dp-link {
+      background-color: var(--color-orange-bg);
+      border-color: #ffd8bf;
+      color: var(--color-orange);
+    }
+
+    /* 空状态提示 */
+    .empty-placeholder {
+      padding: 36px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12.5px;
+    }
+
+    /* ==========================================================================
+       高德原生 Marker 自定义 DOM 样式 (完全纯色扁平，无拟物阴影)
+       ========================================================================== */
+    .marker-food {
+      width: 26px;
+      height: 26px;
+      line-height: 23px;
+      box-sizing: border-box;
+      border: 1.5px solid #ffffff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+      background-color: var(--color-blue);
+    }
+    .marker-food span {
+      pointer-events: none;
+      user-select: none;
+    }
+    .marker-food.active {
+      transform: scale(1.25);
+      z-index: 1000 !important;
+      box-shadow: 0 0 0 3px #191919;
+    }
+    .marker-food.hk { background-color: var(--color-blue) !important; }
+    .marker-food.wc { background-color: var(--color-orange) !important; }
+    .marker-food.sy { background-color: var(--color-purple) !important; }
+    .marker-food.lg { background-color: var(--color-green) !important; }
+
+    .marker-city {
+      min-width: 58px;
+      min-height: 34px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 2px solid var(--city-color);
+      background: var(--bg-primary);
+      color: var(--city-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+      cursor: pointer;
+    }
+    .marker-city span {
+      font-size: 10px;
+      color: var(--text-secondary);
+      pointer-events: none;
+    }
+    .marker-city.hk { --city-color: var(--color-blue); }
+    .marker-city.wc { --city-color: var(--color-orange); }
+    .marker-city.sy { --city-color: var(--color-purple); }
+    .marker-city.lg { --city-color: var(--color-green); }
+
+    .marker-spot {
+      width: 28px;
+      height: 28px;
+      line-height: 24px;
+      box-sizing: border-box;
+      background-color: var(--color-black) !important;
+      border: 2px solid #ffffff;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    .marker-spot.active {
+      transform: scale(1.25);
+      z-index: 1000 !important;
+      box-shadow: 0 0 0 3px #0969da;
+    }
+
+    /* 用户定位点 */
+    .marker-user {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      background-color: #0969da;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.4);
+    }
+    .marker-user::after {
+      content: '';
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      right: -8px;
+      bottom: -8px;
+      border-radius: 50%;
+      background: rgba(9, 105, 218, 0.2);
+      animation: pulse 2s infinite ease-out;
+      pointer-events: none;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+
+    /* 测距连线中点小药丸 */
+    .distance-badge {
+      background-color: #191919;
+      color: #ffffff;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    /* ==========================================================================
+       高德原生 isCustom 自定义弹窗 (Notion / Linear 纯色扁平化无拟物白边)
+       ========================================================================== */
+    .amap-info-contentContainer {
+      padding: 0 !important;
+    }
+    .amap-info-sharp {
+      display: none !important;
+    }
+
+    .custom-info-card {
+      position: relative;
+      width: 240px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-dark);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-family: var(--font-family);
+      margin-bottom: 8px;
+      transition: opacity 0.15s ease;
+    }
+
+    /* 防穿透保护态：打开瞬间不可点击，杜绝误触 */
+    .custom-info-card.opening {
+      pointer-events: none !important;
+    }
+
+    /* Notion 风格极简小三角指针，优雅指向选中的Marker并提供物理隔离缓冲 */
+    .custom-info-card::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 10px;
+      height: 10px;
+      background: var(--bg-primary);
+      border-right: 1px solid var(--border-dark);
+      border-bottom: 1px solid var(--border-dark);
+      pointer-events: none;
+    }
+
+    .custom-info-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .custom-info-title-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex: 1;
+    }
+
+    .custom-info-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.3;
+    }
+
+    .custom-info-close {
+      border: none;
+      background: transparent;
+      font-size: 15px;
+      color: var(--text-muted);
+      cursor: pointer;
+      line-height: 1;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+    }
+    .custom-info-close:hover {
+      color: var(--text-primary);
+    }
+
+    .custom-info-tags {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .custom-info-desc {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .custom-info-addr {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      line-height: 1.3;
+      border-top: 1px solid var(--bg-secondary);
+      padding-top: 4px;
+    }
+
+    .custom-info-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .custom-info-btn {
+      flex: 1;
+      min-height: 44px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      text-decoration: none;
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+      outline: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .custom-info-btn.shop {
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+    .custom-info-btn.dp {
+      background-color: var(--color-orange-bg);
+      border-color: #ffd8bf;
+      color: var(--color-orange);
+    }
+    .custom-info-btn.dp:active {
+      background-color: #ffe7ba;
+    }
+    .custom-info-btn.nav {
+      background-color: var(--color-black);
+      border-color: var(--color-black);
+      color: #ffffff;
+    }
+
+    /* 状态提示浮层 (Toast) */
+    .status-toast {
+      position: absolute;
+      top: calc(75px + var(--safe-top));
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: rgba(25, 25, 25, 0.9);
+      color: #ffffff;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 500;
+      z-index: 2000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      white-space: nowrap;
+    }
+    .status-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 模态框 (坐标输入 / 自定义基准) */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 3000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.show {
+      display: flex;
+    }
+    .modal-card {
+      background: var(--bg-primary);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 320px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    .modal-title {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .modal-desc {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+    .modal-input {
+      width: 100%;
+      height: 32px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0 8px;
+      font-size: 12.5px;
+      outline: none;
+    }
+    .modal-input:focus {
+      border-color: var(--border-dark);
+    }
+    .preset-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip {
+      font-size: 11px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 6px 12px;
+      color: var(--text-primary);
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .modal-btn {
+      min-height: 44px;
+      padding: 8px 14px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+      background: var(--bg-primary);
+    }
+    .modal-btn.primary {
+      background: var(--color-black);
+      border-color: var(--color-black);
+      color: #ffffff;
+    }
+
+    .map-fallback {
+      position: absolute;
+      inset: 0;
+      z-index: 800;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: var(--bg-secondary);
+    }
+    .map-fallback.show {
+      display: flex;
+    }
+    .map-fallback-card {
+      width: min(360px, 100%);
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-primary);
+      text-align: center;
+    }
+    .offline-city-grid {
+      display: none;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .offline-city-grid.show {
+      display: grid;
+    }
+    .offline-city-card {
+      min-height: 58px;
+      padding: 9px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 7px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 2px;
+      cursor: pointer;
+      font-family: inherit;
+      text-align: left;
+    }
+    .offline-city-card strong {
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+    .offline-city-card span {
+      font-size: 10.5px;
+      color: var(--text-muted);
+    }
+    .offline-city-card:active {
+      background: var(--bg-active);
+    }
+    .map-fallback-title {
+      margin-bottom: 6px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .map-fallback-desc {
+      margin-bottom: 14px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .map-fallback-btn {
+      min-height: 44px;
+      padding: 8px 16px;
+      border: 1px solid var(--color-black);
+      border-radius: 5px;
+      background: var(--color-black);
+      color: #ffffff;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    @media (max-height: 680px) and (max-width: 899px) {
+      .fab-group {
+        display: grid;
+        grid-template-columns: repeat(2, 44px);
+        gap: 6px;
+      }
+    }
+
+    @media (min-width: 900px) {
+      .bottom-drawer {
+        top: calc(90px + var(--safe-top));
+        right: calc(18px + var(--safe-right));
+        bottom: calc(18px + var(--safe-bottom));
+        left: auto;
+        width: 430px;
+        max-height: calc(100vh - 108px - var(--safe-top) - var(--safe-bottom));
+        height: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+      }
+      .bottom-drawer.half,
+      .bottom-drawer.expanded {
+        height: auto;
+      }
+      .bottom-drawer.collapsed {
+        top: auto;
+        height: 76px;
+      }
+      .fab-group {
+        right: calc(466px + var(--safe-right)) !important;
+        bottom: calc(18px + var(--safe-bottom)) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- 顶部导航与筛选控制栏 -->
+  <header class="top-header">
+    <div class="header-main-row">
+      <div class="app-title-group">
+        <h1>海南自由行</h1>
+        <span class="tag-native">高德原生2.0</span>
+      </div>
+
+      <!-- 美食 / 景点 模式切换胶囊 -->
+      <div class="mode-switcher">
+        <button class="mode-tab active" id="tab-food" onclick="switchMode('food')">
+          <span>🍜</span> 美食榜单
+        </button>
+        <button class="mode-tab" id="tab-spot" onclick="switchMode('spot')">
+          <span>🏝️</span> 景点打卡
+        </button>
+      </div>
+    </div>
+
+    <!-- 实时检索框与城市过滤 Pill -->
+    <div class="header-filter-row">
+      <div class="search-box-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" id="search-input" placeholder="搜索店铺/特色/小吃..." aria-label="搜索店铺、特色或小吃" oninput="onSearchInput(this.value)">
+        <button type="button" class="search-clear" id="search-clear-btn" aria-label="清除搜索内容" onclick="clearSearch()">✕</button>
+      </div>
+
+      <div class="filter-pills-group">
+        <button class="filter-pill active" onclick="setCityFilter('all', this)">全岛</button>
+        <button class="filter-pill" onclick="setCityFilter('海口', this)">海口</button>
+        <button class="filter-pill" onclick="setCityFilter('文昌', this)">文昌</button>
+        <button class="filter-pill" onclick="setCityFilter('三亚', this)">三亚</button>
+        <button class="filter-pill" onclick="setCityFilter('临高', this)">临高</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 地图渲染容器 -->
+  <div id="map-container">
+    <div id="map"></div>
+    <div class="map-fallback show" id="map-fallback" role="status" aria-live="polite">
+      <div class="map-fallback-card">
+        <div class="map-fallback-title" id="map-fallback-title">正在加载地图</div>
+        <div class="map-fallback-desc" id="map-fallback-desc">地图加载失败时仍可浏览下方美食与景点列表。</div>
+        <div class="offline-city-grid" id="offline-city-grid"></div>
+        <button type="button" class="map-fallback-btn" onclick="retryMapLoad()">重新加载地图</button>
+      </div>
+    </div>
+
+    <!-- 景点选定横幅提示 (景点模式联动美食时呈现) -->
+    <div class="spot-banner" id="spot-banner" role="status" aria-live="polite">
+      <div class="spot-banner-text" id="banner-spot-name">🏝️ 选中景点</div>
+      <button class="spot-banner-btn" onclick="unselectSpot()">取消关联</button>
+    </div>
+
+    <!-- 悬浮操作按钮组 (FAB) -->
+    <div class="fab-group" id="map-fab-group">
+      <button class="fab-btn primary" title="定位当前位置" onclick="locateMe(true)">🎯</button>
+      <button class="fab-btn" title="输入自定义基准坐标" onclick="openInputModal()">📍</button>
+      <button class="fab-btn" title="查看海南全岛视野" onclick="fitAllPoints()">🗺️</button>
+      <button class="fab-btn" title="折叠/展开列表抽屉" onclick="toggleDrawerState()">📋</button>
+    </div>
+
+    <!-- 状态 Toast 提示 -->
+    <div class="status-toast" id="status-toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <!-- 底部手势自适应抽屉 (Bottom Sheet) -->
+  <aside class="bottom-drawer half" id="bottom-drawer">
+    <div class="drawer-handle-bar" id="drawer-handle" role="button" tabindex="0" aria-label="折叠或展开列表">
+      <div class="drawer-handle-pill"></div>
+    </div>
+
+    <div class="drawer-header">
+      <div class="drawer-title-wrap">
+        <span class="drawer-title" id="drawer-main-title">精选特色美食</span>
+        <span class="drawer-count" id="drawer-count-badge">(141 家)</span>
+      </div>
+      <span class="drawer-hint" id="drawer-hint">轻按折叠 / 上滑全屏</span>
+    </div>
+
+    <div class="drawer-list" id="drawer-list">
+      <!-- 动态插入美食/景点卡片 -->
+    </div>
+  </aside>
+
+  <!-- 手动输入坐标模态框 -->
+  <div class="modal-overlay" id="input-modal">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="coord-modal-title">
+      <div class="modal-title" id="coord-modal-title">设置基准定位点</div>
+      <div class="modal-desc">可输入基准坐标（GCJ-02，纬度, 经度），系统将按距离由近及远智能重排美食与景点：</div>
+      <input type="text" class="modal-input" id="coord-input" inputmode="decimal" autocomplete="off" aria-label="输入纬度和经度，以逗号分隔" placeholder="例如: 20.0450, 110.3475">
+      
+      <div style="font-size:11px;color:var(--text-muted);">常用快捷地标：</div>
+      <div class="preset-chips">
+        <button type="button" class="chip" onclick="applyPresetCoord(20.0450, 110.3475, '海口·骑楼老街')">海口骑楼</button>
+        <button type="button" class="chip" onclick="applyPresetCoord(19.6150, 110.7528, '文昌·文南老街')">文昌老街</button>
+        <button type="button" class="chip" onclick="applyPresetCoord(18.2723, 109.7291, '三亚·后海村')">三亚后海</button>
+        <button type="button" class="chip" onclick="applyPresetCoord(18.2382, 109.5086, '三亚·第一市场')">第一市场</button>
+        <button type="button" class="chip" onclick="applyPresetCoord(18.2287, 109.6447, '三亚·亚龙湾')">亚龙湾</button>
+      </div>
+
+      <div class="modal-buttons">
+        <button class="modal-btn" onclick="closeInputModal()">取消</button>
+        <button class="modal-btn primary" onclick="submitCoordInput()">确认设定</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 业务数据与地图交互逻辑 -->
+<script>
+  /* ==========================================================================
+     核心数据集：141 家美食 + 23 处景点 (已全量校准高精 GCJ-02 陆地坐标)
+     ========================================================================== */
+  const FOODS = [
+  {
+    "id": 1,
+    "name": "西天庙小饭街",
+    "city": "海口",
+    "district": "龙华区",
+    "address": "海口市龙华区义兴街75号西天庙",
+    "lat": 20.0414,
+    "lng": 110.34,
+    "tag": "老字号小吃聚集地",
+    "category": "老字号小吃",
+    "source": "日食记"
+  },
+  {
+    "id": 2,
+    "name": "昌旺茶店",
+    "city": "海口",
+    "district": "美兰区",
+    "address": "海口市海甸二西路3-9号正北方向50米",
+    "lat": 20.0573,
+    "lng": 110.3392,
+    "tag": "海口老牌老爸茶(注:原店已歇业，建议就近选西天庙老爸茶)",
+    "category": "老爸茶",
+    "source": "日食记",
+    "statusNote": "已歇业"
+  },
+  {
+    "id": 3,
+    "name": "肥龙·脆皮烤鸡(国贸店)",
+    "city": "海口",
+    "district": "龙华区",
+    "address": "海口市龙华区国贸路国贸大厦B座副楼4单元107号",
+    "lat": 20.02738,
+    "lng": 110.32415,
+    "tag": "老牌脆皮烤鸡/海南传统菜",
+    "category": "琼菜烧禽",
+    "source": "日食记"
+  },
+  {
+    "id": 4,
+    "name": "甘叔咖啡·电器百货(新华南路店)",
+    "city": "海口",
+    "district": "龙华区",
+    "address": "海口市新华南路4号(海南日报社对面)",
+    "lat": 20.038748,
+    "lng": 110.343945,
+    "tag": "复古情怀/电器老店咖啡",
+    "category": "特色咖啡",
+    "source": "日食记"
+  },
+  {
+    "id": 5,
+    "name": "金山茶餐厅(国贸店)",
+    "city": "海口",
+    "district": "龙华区",
+    "address": "海口市金贸东路2号海口华润中心二期悦府54号",
+    "lat": 20.02635,
+    "lng": 110.31562,
+    "tag": "精品南洋风味咖啡",
+    "category": "特色咖啡",
+    "source": "日食记"
+  },
+  {
+    "id": 6,
+    "name": "妹记斋菜煲",
+    "city": "海口",
+    "district": "美兰区",
+    "address": "博爱街道博爱北路94号",
+    "lat": 20.040912,
+    "lng": 110.34557,
+    "tag": "博爱南老街地道斋菜煲",
+    "category": "传统斋菜煲",
+    "source": "日食记"
+  },
+  {
+    "id": 7,
+    "name": "亚妹正宗海南粉店(骑楼老街店)",
+    "city": "海口",
+    "district": "美兰区",
+    "address": "海口市美兰区新民西路64号",
+    "lat": 20.04023,
+    "lng": 110.344249,
+    "tag": "百年街巷老牌腌海南粉",
+    "category": "海南粉",
+    "source": "日食记"
+  },
+  {
+    "id": 8,
+    "name": "簸箕炸炸",
+    "city": "海口",
+    "district": "美兰区",
+    "address": "海口市美兰区文明中路龙兴坊29号（骑楼店）",
+    "lat": 20.0391,
+    "lng": 110.3477,
+    "tag": "街头传统簸箕特色炸炸/招牌芋泥西多士（人均¥34）",
+    "category": "炸炸小吃",
+    "source": "日食记"
+  },
+  {
+    "id": 9,
+    "name": "五指山野菜乡(兴丹路店)",
+    "city": "海口",
+    "district": "琼山区",
+    "address": "海口市兴丹二横街省农业科学院商业街6-7号",
+    "lat": 20.011746,
+    "lng": 110.365949,
+    "tag": "五指山地道原生态土菜",
+    "category": "野菜琼菜",
+    "source": "日食记"
+  },
+  {
+    "id": 10,
+    "name": "燕嫂铺前糟粕醋",
+    "city": "文昌",
+    "district": "铺前镇",
+    "address": "文昌市铺前镇渔新路20号(铺前老街海文大桥旁)",
+    "lat": 20.0267,
+    "lng": 110.5825,
+    "tag": "铺前港口正宗海鲜糟粕醋",
+    "category": "糟粕醋",
+    "source": "日食记"
+  },
+  {
+    "id": 11,
+    "name": "琼菜人家(文昌大道店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文昌大道德桂馨商城1层",
+    "lat": 19.601025,
+    "lng": 110.751442,
+    "tag": "文昌正统地道琼菜海鲜",
+    "category": "文昌琼菜",
+    "source": "日食记"
+  },
+  {
+    "id": 12,
+    "name": "旺溪中西茶店(沿江路店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文城镇沿江南路与霞洞桥交叉口东北280米",
+    "lat": 19.618888,
+    "lng": 110.760963,
+    "tag": "文城沿江沿河老爸茶早茶",
+    "category": "文昌老爸茶",
+    "source": "日食记"
+  },
+  {
+    "id": 13,
+    "name": "面包车鸡饭店(第一分店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文城镇文建东路148号",
+    "lat": 19.608499,
+    "lng": 110.760659,
+    "tag": "地道文昌白斩鸡与鸡油饭",
+    "category": "正宗文昌鸡",
+    "source": "日食记"
+  },
+  {
+    "id": 14,
+    "name": "吉英盐焗鸡(文中路店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文城镇文中路17-3号(昱恒大酒店侧)",
+    "lat": 19.606012,
+    "lng": 110.759112,
+    "tag": "文昌名吃经典纸包盐焗鸡",
+    "category": "文昌盐焗鸡",
+    "source": "日食记"
+  },
+  {
+    "id": 15,
+    "name": "椰香农家饭(东郊椰林)",
+    "city": "文昌",
+    "district": "东郊镇",
+    "address": "文昌市东郊镇建华山村委会社区南",
+    "lat": 19.552791,
+    "lng": 110.86539,
+    "tag": "东郊椰林特色椰子鸡农家菜",
+    "category": "椰林农家乐",
+    "source": "日食记"
+  },
+  {
+    "id": 16,
+    "name": "姐影清补凉",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文城镇庆龄路37号(华味早餐店)",
+    "lat": 19.621144,
+    "lng": 110.761241,
+    "tag": "文昌老牌浓郁椰奶清补凉",
+    "category": "清补凉",
+    "source": "日食记"
+  },
+  {
+    "id": 17,
+    "name": "望城抱罗粉(文南老街店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文城镇文南路206号(文南老街口)",
+    "lat": 19.612,
+    "lng": 110.7543,
+    "tag": "文昌抱罗粉传承老店（人均¥13）",
+    "category": "抱罗粉",
+    "source": "日食记"
+  },
+  {
+    "id": 18,
+    "name": "高隆湾海鲜市场加工",
+    "city": "文昌",
+    "district": "文城镇",
+    "address": "文昌市文城镇高隆路与逸龙西路交叉口高隆湾海鲜广场",
+    "lat": 19.540993,
+    "lng": 110.8179,
+    "tag": "高隆湾鲜活海鲜加工/观海",
+    "category": "海鲜加工",
+    "source": "日食记"
+  },
+  {
+    "id": 19,
+    "name": "圣源烤猪第一家",
+    "city": "临高",
+    "district": "临高县",
+    "address": "临高县临城镇江南路72号",
+    "lat": 19.9042,
+    "lng": 109.6848,
+    "tag": "临高烤乳猪非遗特色店",
+    "category": "临高乳猪",
+    "source": "日食记"
+  },
+  {
+    "id": 20,
+    "name": "SaSa的海(后海店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "海棠湾镇藤海村120号",
+    "lat": 18.272526,
+    "lng": 109.72782,
+    "tag": "十年老店川味海鲜/手撕鸡",
+    "category": "海鲜小馆",
+    "source": "行程自带"
+  },
+  {
+    "id": 21,
+    "name": "文二哥餐饮店(后海店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "三亚市海棠区后海村藤海社区中村二小组94号",
+    "lat": 18.273526,
+    "lng": 109.730274,
+    "tag": "海南地道椰子鸡与糟粕醋火锅",
+    "category": "糟粕醋椰子鸡",
+    "source": "行程自带"
+  },
+  {
+    "id": 22,
+    "name": "友·甜品清补凉",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "海棠区后海村皇后湾路（藤海小学对面）",
+    "lat": 18.2724,
+    "lng": 109.7286,
+    "tag": "后海口碑第一/现熬老椰浓浆/椰子冻与老盐柠檬水",
+    "category": "特色甜品",
+    "source": "行程自带"
+  },
+  {
+    "id": 23,
+    "name": "阿龙海鲜农家乐",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "海棠区新居民路66号（龙海风情小镇对面）",
+    "lat": 18.3798,
+    "lng": 109.7302,
+    "tag": "连续5年必吃榜/海鲜池明码现捞",
+    "category": "必吃榜海鲜",
+    "source": "行程自带"
+  },
+  {
+    "id": 24,
+    "name": "泰越轩泰式餐厅",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "吉阳区亚龙湾东榕美食广场1楼002号商铺",
+    "lat": 18.2283,
+    "lng": 109.6309,
+    "tag": "泰国主厨咖喱炒蟹/亚龙湾东榕美食广场",
+    "category": "异域海鲜",
+    "source": "行程自带"
+  },
+  {
+    "id": 25,
+    "name": "萌哒哒椰子鸡(第一市场店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区新建街与解放路交叉口西南",
+    "lat": 18.2377,
+    "lng": 109.507,
+    "tag": "连锁椰子鸡品牌/必吃榜/第一市场店",
+    "category": "椰子鸡",
+    "source": "行程自带"
+  },
+  {
+    "id": 26,
+    "name": "琼肴记·鲍鱼文昌鸡",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区凤凰镇中海路3号海角院子内（海韵酒店与国光豪生酒店旁）",
+    "lat": 18.2887,
+    "lng": 109.4443,
+    "tag": "正餐/文昌鸡鲍鱼套餐/三亚湾椰梦长廊店",
+    "category": "文昌琼菜",
+    "source": "行程自带"
+  },
+  {
+    "id": 27,
+    "name": "阿浪海鲜连锁加工店(第一市场店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区新民街115号(第一市场旁)",
+    "lat": 18.2378,
+    "lng": 109.5086,
+    "tag": "自选活海鲜/现场加工",
+    "category": "海鲜加工",
+    "source": "行程自带"
+  },
+  {
+    "id": 28,
+    "name": "友谊路下岗职工海鲜广场",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区友谊路102号",
+    "lat": 18.2656,
+    "lng": 109.4952,
+    "tag": "接地气海鲜加工广场/本地人排队",
+    "category": "海鲜加工",
+    "source": "行程自带"
+  },
+  {
+    "id": 29,
+    "name": "西岛渔家海鲜餐饮",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区西岛社区朝山暮海附近",
+    "lat": 18.235594,
+    "lng": 109.371781,
+    "tag": "西岛内孤岛渔家菜/岛上特供",
+    "category": "渔家海鲜",
+    "source": "行程自带"
+  },
+  {
+    "id": 30,
+    "name": "后海七号海鲜烧烤大排档",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "三亚市海棠区后海藤海社区西村134号",
+    "lat": 18.27081,
+    "lng": 109.728084,
+    "tag": "烤生蚝/蒜蓉扇贝/椰青/沙滩夜食",
+    "category": "沙滩烧烤",
+    "source": "行程自带"
+  },
+  {
+    "id": 31,
+    "name": "亚喜小吃店",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "藤海街与渔港路交叉口东北100米",
+    "lat": 18.273062,
+    "lng": 109.727678,
+    "tag": "2026必吃榜/干煎码头鱼+海鲜炒饭",
+    "category": "家常小馆",
+    "source": "网络补充"
+  },
+  {
+    "id": 32,
+    "name": "杭州小笼包(后海店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "后海村主干道（05:30开市，冲浪前早餐首选）",
+    "lat": 18.2726,
+    "lng": 109.7282,
+    "tag": "老夫妻现包小笼/冲浪前热乎早餐",
+    "category": "特色早餐",
+    "source": "网络补充"
+  },
+  {
+    "id": 33,
+    "name": "渡隐饭堂(后海店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "三亚市海棠区海棠湾滕海中村15-1号",
+    "lat": 18.2728,
+    "lng": 109.7292,
+    "tag": "潮汕生腌虾/花椒焗膏蟹/潮汕炸粿",
+    "category": "潮汕海鲜",
+    "source": "网络补充"
+  },
+  {
+    "id": 34,
+    "name": "宫满西廷(大东海店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "吉阳区榆亚路99-8号（人均100+）",
+    "lat": 18.2249,
+    "lng": 109.5235,
+    "tag": "连续5年必吃榜/创意海南菜情侣餐厅",
+    "category": "创意琼菜",
+    "source": "网络补充"
+  },
+  {
+    "id": 35,
+    "name": "海南椰子鸡饭店(大东海店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "三亚市吉阳区海韵路金茂海景花园1层",
+    "lat": 18.2278,
+    "lng": 109.5252,
+    "tag": "2026必吃榜/原味椰子鸡/价格亲民",
+    "category": "椰子鸡",
+    "source": "网络补充"
+  },
+  {
+    "id": 36,
+    "name": "林姐香味海鲜(第一市场)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区新民街139号第一市场内（人均120）",
+    "lat": 18.2375,
+    "lng": 109.5085,
+    "tag": "老板娘代购带逛/椒盐皮皮虾蛏子",
+    "category": "市场海鲜",
+    "source": "网络补充"
+  },
+  {
+    "id": 37,
+    "name": "阿菊冷饮店(第一市场店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区红旗街一巷19号·第一市场海鲜加工一条街后面（人均15，14:00才开门）",
+    "lat": 18.237,
+    "lng": 109.5086,
+    "tag": "30年炒冰/榴莲炒冰芒果冰清补凉",
+    "category": "特色冷饮",
+    "source": "网络补充"
+  },
+  {
+    "id": 38,
+    "name": "创味·非遗藤桥排骨(海棠湾店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "三亚市海棠区新民路与西河西路交叉口",
+    "lat": 18.384576,
+    "lng": 109.735087,
+    "tag": "非遗老字号/先腌后炸外酥焦糖香排骨",
+    "category": "非遗老字号",
+    "source": "网络补充"
+  },
+  {
+    "id": 39,
+    "name": "动静美式汉堡",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "三亚市海棠区藤海街动静音乐酒吧内",
+    "lat": 18.271418,
+    "lng": 109.72842,
+    "tag": "必吃榜·4年/垃圾桶牛堡手工手打",
+    "category": "美式汉堡",
+    "source": "网络补充"
+  },
+  {
+    "id": 40,
+    "name": "琼州糟粕醋·海南酸汤火锅(海棠68店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "三亚市海棠区海棠北路68号环球美食街1层",
+    "lat": 18.3135,
+    "lng": 109.7258,
+    "tag": "百年传统火锅/酸辣醇厚涮海鲜一绝",
+    "category": "糟粕醋火锅",
+    "source": "网络补充"
+  },
+  {
+    "id": 41,
+    "name": "疍家人馄饨",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "海棠区后海村藤海一巷（人均14）",
+    "lat": 18.2727,
+    "lng": 109.7287,
+    "tag": "渔家早餐/14元大碗汤鲜味美",
+    "category": "特色早餐",
+    "source": "网络补充"
+  },
+  {
+    "id": 42,
+    "name": "黎家荔枝木烤鸡(亚龙湾店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "三亚市吉阳区博后红光村二队33-8号铺面",
+    "lat": 18.233816,
+    "lng": 109.61053,
+    "tag": "必吃榜·2年/荔枝木现烤脆皮文昌鸡",
+    "category": "黎家烤鸡",
+    "source": "网络补充"
+  },
+  {
+    "id": 43,
+    "name": "茶与海南鸡饭·美学餐厅",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "三亚市吉阳区亚龙湾博后北路1号小康广场1号",
+    "lat": 18.246188,
+    "lng": 109.620264,
+    "tag": "2026必吃榜/白切文昌鸡三种蘸料鸡油饭",
+    "category": "美学琼菜",
+    "source": "网络补充"
+  },
+  {
+    "id": 44,
+    "name": "琼乡阁·正宗海南菜(亚龙湾店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "三亚市吉阳区博后村博后路168号",
+    "lat": 18.237,
+    "lng": 109.6265,
+    "tag": "琼菜代表/东山羊椰子饭文昌鸡",
+    "category": "正宗琼菜",
+    "source": "网络补充"
+  },
+  {
+    "id": 45,
+    "name": "麦锦记牛肉后安粉(亚龙湾店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "三亚市吉阳区求雨一路与博后南路交叉口西60米",
+    "lat": 18.244512,
+    "lng": 109.619004,
+    "tag": "2026必吃榜/万宁后安粉专门店10年老店",
+    "category": "特色早餐",
+    "source": "网络补充"
+  },
+  {
+    "id": 46,
+    "name": "太琼糟粕醋(百花谷店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "亚龙湾路112号百花谷商业街RT04二层D202",
+    "lat": 18.2328,
+    "lng": 109.6431,
+    "tag": "酸汤火锅连锁/百花谷商圈海鲜文昌鸡",
+    "category": "糟粕醋火锅",
+    "source": "网络补充"
+  },
+  {
+    "id": 47,
+    "name": "小海豚海鲜广场(百花谷店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "吉阳区亚龙湾亚泰湖滨商业街B9A号（百花谷商圈旁）",
+    "lat": 18.2341,
+    "lng": 109.6453,
+    "tag": "海鲜连锁头部/椒盐皮皮虾清蒸石斑",
+    "category": "海鲜广场",
+    "source": "网络补充"
+  },
+  {
+    "id": 48,
+    "name": "椰小鸡·椰子鸡(三亚湾椰梦长廊店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区迎宾路金凤凰海景度假公寓青春里广场3楼",
+    "lat": 18.2609,
+    "lng": 109.4955,
+    "tag": "必吃榜·2年/三只现开椰青锅底不加一滴水",
+    "category": "椰子鸡",
+    "source": "网络补充"
+  },
+  {
+    "id": 49,
+    "name": "三亚老渔民海鲜店(三亚湾)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区三亚河西路与长顺五巷交叉口东北77米（人均127）",
+    "lat": 18.2597,
+    "lng": 109.505,
+    "tag": "必吃榜·3年/二十年老店码头直供粤式海鲜",
+    "category": "海鲜老店",
+    "source": "网络补充"
+  },
+  {
+    "id": 50,
+    "name": "文昌小老弟·糟粕醋(外贸路)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区外贸路海湾公寓1102铺面（人均107）",
+    "lat": 18.263,
+    "lng": 109.4949,
+    "tag": "2026必吃榜/非遗糟粕醋+椰子鸡双拼",
+    "category": "糟粕醋火锅",
+    "source": "网络补充"
+  },
+  {
+    "id": 51,
+    "name": "小公主包鸡烤鸡·疍家烧烤",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区迎宾路72号（人均90）",
+    "lat": 18.2625,
+    "lng": 109.4984,
+    "tag": "必吃榜·2年/蜜汁烤鸡+疍家烧烤夜宵至03:00",
+    "category": "烧烤烤鸡",
+    "source": "网络补充"
+  },
+  {
+    "id": 52,
+    "name": "不仔客海鲜(椰梦长廊店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区凤凰镇新城路39号A区（人均140）",
+    "lat": 18.2921,
+    "lng": 109.4251,
+    "tag": "老字号4.8/烤生蚝辣炒和乐蟹近落日线",
+    "category": "海鲜老字号",
+    "source": "网络补充"
+  },
+  {
+    "id": 53,
+    "name": "华姐炸串(荔枝沟店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "三亚市吉阳区荔枝沟路130号天南货仓超市旁",
+    "lat": 18.294717,
+    "lng": 109.522145,
+    "tag": "本地人气炸串/蘸料是灵魂（人均¥32）",
+    "category": "炸串小吃",
+    "source": "小红书"
+  },
+  {
+    "id": 54,
+    "name": "品得香美食店",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区解放路南海苑1栋1楼1103号（第三市场内）",
+    "lat": 18.2685,
+    "lng": 109.4934,
+    "tag": "炒粉/腌抱罗粉惊艳/第三市场老爸茶（人均¥31）",
+    "category": "老爸茶小吃",
+    "source": "小红书"
+  },
+  {
+    "id": 55,
+    "name": "87号渔船·海鲜大排档(海棠湾店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "address": "海棠区海棠南路海昌不夜城美食街1层302号",
+    "lat": 18.3132,
+    "lng": 109.7268,
+    "tag": "蚝仔捞饭一绝/胡椒肉蟹烧伊面（人均¥120）",
+    "category": "海鲜大排档",
+    "source": "小红书"
+  },
+  {
+    "id": 56,
+    "name": "虎婆香草鸭·海南大排档(椰梦长廊店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区三亚湾路128号龙兴海鲜广场北区二楼5号商铺",
+    "lat": 18.2739,
+    "lng": 109.4778,
+    "tag": "文火慢炖香草鸭/越煮越香越入味（人均¥120）",
+    "category": "海南大排档",
+    "source": "小红书"
+  },
+  {
+    "id": 57,
+    "name": "港门正宗鲜鱼汤(二市场店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区解放三路原五交化公司第一层右第1间铺面",
+    "lat": 18.2574,
+    "lng": 109.5022,
+    "tag": "鱼汤鲜嫩/港门酸粉/价格便宜（人均¥28）",
+    "category": "鲜鱼汤粉",
+    "source": "小红书"
+  },
+  {
+    "id": 58,
+    "name": "海南椰子果冻",
+    "city": "三亚",
+    "district": "—",
+    "address": "景区及夜市流动摊售（无固定门店）",
+    "lat": null,
+    "lng": null,
+    "tag": "椰奶味椰子冻/10r一份大的",
+    "category": "特色甜品",
+    "source": "小红书"
+  },
+  {
+    "id": 59,
+    "name": "成樱海鲜面·特色早餐(原陈英早餐)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区群众街38号阿松造型旁",
+    "lat": 18.249272,
+    "lng": 109.506285,
+    "tag": "吃面和粉可无限加酸菜/本地人地道味（人均¥14）",
+    "category": "特色早餐",
+    "source": "小红书"
+  },
+  {
+    "id": 60,
+    "name": "嗲嗲的椰子鸡(大东海店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "吉阳区榆海路1号大东海酒店一楼101商铺（另有亚龙湾/海棠湾等多店）",
+    "lat": 18.2231,
+    "lng": 109.527,
+    "tag": "椰子水锅底鲜/汤底好喝/多店连锁（人均¥110）",
+    "category": "椰子鸡",
+    "source": "小红书"
+  },
+  {
+    "id": 61,
+    "name": "鹏展海记炸鸡店(渔村店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "address": "吉阳区渔村路50号（近秋收商行）",
+    "lat": 18.2221,
+    "lng": 109.5104,
+    "tag": "汁水超多/外酥里嫩配酸甜汁（人均¥48）",
+    "category": "炸鸡小吃",
+    "source": "小红书"
+  },
+  {
+    "id": 62,
+    "name": "群众街传统手工小吃糖水",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区群众街39号(成樱海鲜面旁)",
+    "lat": 18.2493,
+    "lng": 109.50635,
+    "tag": "糯唧唧拉丝/馅料超足/老式糖水",
+    "category": "糖水小吃",
+    "source": "小红书"
+  },
+  {
+    "id": 63,
+    "name": "琼禧小馆·海南菜",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区三亚湾路蓝色海岸2楼3号铺（嗲嗲的椰子鸡楼上）",
+    "lat": 18.269,
+    "lng": 109.4852,
+    "tag": "椰梦长廊旁本地人常去的海南菜（人均¥100）",
+    "category": "海南菜",
+    "source": "小红书"
+  },
+  {
+    "id": 64,
+    "name": "西岛网红虾饼老店",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区西岛游客中心旁沿海路",
+    "lat": 18.240157,
+    "lng": 109.376256,
+    "tag": "上过《极限挑战》/整只虾招牌虾饼¥8、小龙虾饼¥10/4个",
+    "category": "渔村小吃",
+    "source": "网红店"
+  },
+  {
+    "id": 65,
+    "name": "第一家清补凉(天涯小镇)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "三亚市天涯区马岭社区黄龙街与一横巷交叉口",
+    "lat": 18.304618,
+    "lng": 109.333131,
+    "tag": "天涯小镇老牌清补凉/老椰肉现榨椰奶",
+    "category": "清补凉",
+    "source": "网红店"
+  },
+  {
+    "id": 66,
+    "name": "吴日彪蒜香猪牛排(水巷口店)",
+    "city": "海口",
+    "district": "美兰区",
+    "address": "海口市美兰区水巷口3号",
+    "lat": 20.0442,
+    "lng": 110.3455,
+    "tag": "十年老店/蒜香炸排骨外酥里嫩/骑楼老街必买（人均¥34）",
+    "category": "炸物小吃",
+    "source": "点评高分老店"
+  },
+  {
+    "id": 67,
+    "name": "老陈记辣汤饭店",
+    "city": "海口",
+    "district": "美兰区",
+    "address": "水巷口40号",
+    "lat": 20.044147,
+    "lng": 110.345638,
+    "tag": "老海口经典早餐/白胡椒猪杂浓汤+腊肠煎蛋（人均¥25）",
+    "category": "辣汤饭",
+    "source": "点评高分老店"
+  },
+  {
+    "id": 68,
+    "name": "郑阿婆椰奶清补凉(三亚湾总店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区友谊街奥斯卡隔壁（海关铺面A栋）",
+    "lat": 18.2633,
+    "lng": 109.493,
+    "tag": "三亚地标级清补凉老店/椰奶冰球清补凉/料多",
+    "category": "清补凉",
+    "source": "点评高分老店"
+  },
+  {
+    "id": 69,
+    "name": "四川小胡子海鲜(椰梦长廊店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "address": "天涯区凤凰镇蓝色海岸B4号",
+    "lat": 18.2691,
+    "lng": 109.485,
+    "tag": "第一市场老牌海鲜加工/明码标价（人均¥106）",
+    "category": "海鲜加工",
+    "source": "点评高分老店"
+  },
+  {
+    "id": 70,
+    "name": "馨妈家儋州米烂小铺",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.297413,
+    "lng": 109.4528,
+    "category": "特色米烂",
+    "tag": "地道儋州传统米烂/特色小吃",
+    "source": "抖音分享",
+    "address": "三亚市天涯区羊新路与三亚里大道交叉口北80米"
+  },
+  {
+    "id": 71,
+    "name": "芳隆早餐店",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.223191,
+    "lng": 109.508881,
+    "category": "特色早餐",
+    "tag": "本地老牌早餐/鸭肉粉汤/伊面/腌粉",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区南边海路37号"
+  },
+  {
+    "id": 72,
+    "name": "阿弟哥老椰头炒冰清补凉(三亚店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.304187,
+    "lng": 109.450464,
+    "category": "清补凉",
+    "tag": "现榨老椰头浓浆清补凉/鲜果炒冰",
+    "source": "抖音分享",
+    "address": "三亚市天涯区羊中西四巷与羊栏路交叉口西南20米"
+  },
+  {
+    "id": 73,
+    "name": "芳隆鱼煲",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.2985,
+    "lng": 109.4512,
+    "category": "特色鱼煲",
+    "tag": "三亚老牌香浓鱼煲大排档/本地市井味",
+    "source": "抖音分享",
+    "address": "三亚市天涯区羊栏回新路附近"
+  },
+  {
+    "id": 74,
+    "name": "五方炒冰",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.26471,
+    "lng": 109.493604,
+    "category": "特色冷饮",
+    "tag": "三亚老字号炒冰/鲜果绵绵冰/椰奶清补凉",
+    "source": "抖音分享",
+    "address": "三亚市天涯区友谊街与外贸路交叉口北40米"
+  },
+  {
+    "id": 75,
+    "name": "港门兰姐小炒店",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.268662,
+    "lng": 109.49275,
+    "category": "家常小炒",
+    "tag": "地道渔港大排档/鲜活海鲜现炒",
+    "source": "抖音分享",
+    "address": "三亚市天涯区解放四路水泥制品厂4栋1125-5号铺面"
+  },
+  {
+    "id": 76,
+    "name": "港门亚花炒粉(团结路店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.253968,
+    "lng": 109.501702,
+    "category": "市井炒粉",
+    "tag": "夜市人气炒粉/锅气十足/地道港门风味",
+    "source": "抖音分享",
+    "address": "三亚市天涯区团结路21号铺面(胜利购物广场北出入口旁)"
+  },
+  {
+    "id": 77,
+    "name": "阿芳老爸茶(丹州小区店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.279069,
+    "lng": 109.513192,
+    "category": "老爸茶",
+    "tag": "传统海岛老爸茶/点心茶点/市井慢生活",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区凤凰路174号"
+  },
+  {
+    "id": 78,
+    "name": "昇记正宗普宁肠粉王",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.248151,
+    "lng": 109.504191,
+    "category": "广式肠粉",
+    "tag": "正宗现磨石磨肠粉/皮薄馅足/特调酱汁",
+    "source": "抖音分享",
+    "address": "三亚市天涯区旺毫巷6号"
+  },
+  {
+    "id": 79,
+    "name": "拉查·泰Fisherman泰餐厅",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.220417,
+    "lng": 109.517912,
+    "category": "异域料理",
+    "tag": "正宗泰式排档/冬阴功汤/黄咖喱炒蟹",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区明月广场临海商铺15号"
+  },
+  {
+    "id": 80,
+    "name": "利国餐厅(文明西路店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.24821,
+    "lng": 109.50652,
+    "category": "正宗琼菜",
+    "tag": "三亚三十年老字号地道海南菜/红烧豆腐/温泉鹅",
+    "source": "抖音分享",
+    "address": "三亚市天涯区文明路133号(通信大厦旁)"
+  },
+  {
+    "id": 81,
+    "name": "屯昌枫木香草鸭(春园总店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.256782,
+    "lng": 109.505448,
+    "category": "香草鸭",
+    "tag": "屯昌非遗枫木香草鸭/砂锅慢炖越煮越入味",
+    "source": "抖音分享",
+    "address": "三亚市天涯区河西路231号1层"
+  },
+  {
+    "id": 82,
+    "name": "春记渔村炸鸡店",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.221979,
+    "lng": 109.510134,
+    "category": "渔村炸鸡",
+    "tag": "南边海渔村秘制酥脆炸鸡/搭配酸甜蘸汁",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区渔村路97号"
+  },
+  {
+    "id": 83,
+    "name": "勇冯串串香",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.231445,
+    "lng": 109.520153,
+    "category": "市井火锅",
+    "tag": "大东海高人气串串香/深夜夜宵聚餐首选",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区下洋田一路春光路22号"
+  },
+  {
+    "id": 84,
+    "name": "嫚姐清补凉",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.237585,
+    "lng": 109.508542,
+    "category": "清补凉",
+    "tag": "第一市场老牌椰奶清补凉/配料丰富地道",
+    "source": "抖音分享",
+    "address": "三亚市天涯区新民街127号"
+  },
+  {
+    "id": 85,
+    "name": "于春正宗椰奶清补凉炒冰",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.253147,
+    "lng": 109.624792,
+    "category": "清补凉",
+    "tag": "正宗老树鲜椰清补凉/炒冰料足不腻",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区亚龙湾六盘村红色二组12号一楼商铺"
+  },
+  {
+    "id": 86,
+    "name": "冰椰岛椰冰(亚龙湾店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.230135,
+    "lng": 109.64423,
+    "category": "特色甜品",
+    "tag": "网红椰子冰淇淋/鲜榨椰汁/手打椰子蛋",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区龙海路11号"
+  },
+  {
+    "id": 87,
+    "name": "黎笛小吃店",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.253552,
+    "lng": 109.624791,
+    "category": "特色小吃",
+    "tag": "博后村地道黎家特色小吃/农家风味",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区亚龙湾博后六盘巷道规划路东南140米"
+  },
+  {
+    "id": 88,
+    "name": "疍家糖水铺子",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.232021,
+    "lng": 109.643211,
+    "category": "传统糖水",
+    "tag": "疍家手工古法糖水/鸡屎藤/红糖姜水",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区亚龙湾百花谷商业中心RT05栋"
+  },
+  {
+    "id": 89,
+    "name": "品致老海南正宗清补凉",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.234774,
+    "lng": 109.644786,
+    "category": "清补凉",
+    "tag": "亚龙湾正宗老海南清补凉/冰淇淋椰奶风味",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区亚龙湾路115号亚泰商业中心C6栋1层1号商铺"
+  },
+  {
+    "id": 90,
+    "name": "二姐鱼酥",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.40029,
+    "lng": 109.754404,
+    "category": "特色鱼酥",
+    "tag": "海棠湾传统香酥鱼酥小吃/外酥里嫩海味足",
+    "source": "抖音分享",
+    "address": "三亚市海棠区新民路与前进路交叉口东200米"
+  },
+  {
+    "id": 91,
+    "name": "朱家酒店·地道海南菜·藤桥排骨(海棠湾店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.384576,
+    "lng": 109.735087,
+    "category": "地道琼菜",
+    "tag": "藤桥老字号/朱家正宗藤桥排骨开创名店",
+    "source": "抖音分享",
+    "address": "三亚市海棠区海棠湾镇藤桥新居民区路(龙坡烟酒行旁)"
+  },
+  {
+    "id": 92,
+    "name": "屯昌枫木香草鸭(海棠湾林旺店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.318294,
+    "lng": 109.705654,
+    "category": "香草鸭",
+    "tag": "海棠湾地道砂锅香草鸭/本地人家庭聚餐排档",
+    "source": "抖音分享",
+    "address": "三亚市海棠区林旺大道298-1号"
+  },
+  {
+    "id": 93,
+    "name": "黑山烤房BBQ",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.317858,
+    "lng": 109.695153,
+    "category": "美式烤肉",
+    "tag": "后海网红美式精酿烤肉排档/手撕猪肉/牛胸肉",
+    "source": "抖音分享",
+    "address": "三亚市海棠区湾坡村神农路水稻国家公园景区102"
+  },
+  {
+    "id": 94,
+    "name": "伙计茶档(龙海风情小镇店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.378981,
+    "lng": 109.735115,
+    "category": "港式茶档",
+    "tag": "后海冲浪街区复古港风茶餐厅/菠萝油/冻柠茶",
+    "source": "抖音分享",
+    "address": "三亚市海棠区龙海幼儿园东南门西南150米"
+  },
+  {
+    "id": 95,
+    "name": "婉姐腌粉王(龙海风情小镇店)",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.379797,
+    "lng": 109.733979,
+    "category": "海南腌粉",
+    "tag": "后海口碑第一海南腌粉早餐/卤汁浓郁配料厚实",
+    "source": "抖音分享",
+    "address": "三亚市海棠区龙海风情小镇M7-1(后院)龙海东二横巷"
+  },
+  {
+    "id": 96,
+    "name": "99号旺角牛杂煲海鲜大排档",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.312507,
+    "lng": 109.704367,
+    "category": "牛杂火锅",
+    "tag": "海棠湾深夜砂锅牛杂煲/软烂入味/夜市排档",
+    "source": "抖音分享",
+    "address": "三亚市海棠区林旺夜市99号进门左手边"
+  },
+  {
+    "id": 97,
+    "name": "昌姑鱼煲",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.249794,
+    "lng": 109.505934,
+    "category": "传统鱼煲",
+    "tag": "三亚本地人排队老牌鱼煲店/新鲜海鱼砂锅生滚",
+    "source": "抖音分享",
+    "address": "三亚市天涯区群众街61-5号"
+  },
+  {
+    "id": 98,
+    "name": "好渔味吃饭公司",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.253736,
+    "lng": 109.512558,
+    "category": "创意琼菜",
+    "tag": "年轻人喜爱的复古海鲜琼菜馆/生腌/斑斓豆腐",
+    "source": "抖音分享",
+    "address": "三亚市天涯区榕根路51号"
+  },
+  {
+    "id": 99,
+    "name": "琼泷序百年老爸茶(三亚总店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.243876,
+    "lng": 109.508311,
+    "category": "精致琼菜",
+    "tag": "地道海南融合料理/黑猪肉粽/老爸茶茶点矩阵",
+    "source": "抖音分享",
+    "address": "三亚市天涯区三亚河西路74号"
+  },
+  {
+    "id": 100,
+    "name": "三姐正宗潭牛文昌鸡饭店",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.242568,
+    "lng": 109.507539,
+    "category": "正宗文昌鸡",
+    "tag": "潭牛正宗白斩文昌鸡/鸡油饭老字号名店",
+    "source": "抖音分享",
+    "address": "三亚市天涯区建设街34号"
+  },
+  {
+    "id": 101,
+    "name": "阿三靓汤(迎春一巷店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.271604,
+    "lng": 109.514732,
+    "category": "广式靓汤",
+    "tag": "三亚老城区瓦罐养生靓汤/粉汤粉肠地道老味道",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区月川中路林荫河畔小区1-A-4"
+  },
+  {
+    "id": 102,
+    "name": "龙记烤鸭店(新民路店)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.240478,
+    "lng": 109.508081,
+    "category": "传统烧腊",
+    "tag": "老三亚三十年挂炉脆皮烤鸭/皮脆肉嫩酱汁浓",
+    "source": "抖音分享",
+    "address": "三亚市天涯区新民街22号"
+  },
+  {
+    "id": 103,
+    "name": "生记潮汕牛肉火锅",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.274173,
+    "lng": 109.528677,
+    "category": "牛肉火锅",
+    "tag": "鲜切潮汕鲜牛肉/手打牛肉丸/牛骨清汤原汁原味",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区海螺一路二巷7组7040号荔荣五金旁"
+  },
+  {
+    "id": 104,
+    "name": "三亚市喜得记广式肠粉",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.297047,
+    "lng": 109.522733,
+    "category": "特色肠粉",
+    "tag": "荔枝沟学生街超高性价比石磨肠粉/加蛋加肉扎实",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区荔枝沟路南新居委会旁"
+  },
+  {
+    "id": 105,
+    "name": "屯昌枫木香草鸭(荔枝沟店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.297484,
+    "lng": 109.53171,
+    "category": "香草鸭",
+    "tag": "荔枝沟大排档香草鸭旗舰总店/砂锅老鸭鲜香浓厚",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区荔枝沟路206号"
+  },
+  {
+    "id": 106,
+    "name": "新花小食店(南新广场店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.296366,
+    "lng": 109.524246,
+    "category": "传统小吃",
+    "tag": "三亚老牌粉汤炸炸小吃/南新农场街坊老店",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区南新农场南新街254-K号"
+  },
+  {
+    "id": 107,
+    "name": "正大酒家(荔枝沟店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.296036,
+    "lng": 109.52283,
+    "category": "老牌琼菜",
+    "tag": "荔枝沟老字号琼菜海鲜大酒楼/正餐聚会老牌名店",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区荔枝南新路187号电信营业厅斜对面"
+  },
+  {
+    "id": 108,
+    "name": "阖家悦糕点手工坊",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.296676,
+    "lng": 109.525491,
+    "category": "家常菜馆",
+    "tag": "本地家庭聚会老牌实惠琼菜小吃/手工传统糕饼",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区南新教育路与南新教育路东三巷交叉口"
+  },
+  {
+    "id": 109,
+    "name": "顺德古法煲仔粥(荔枝沟店)",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.290761,
+    "lng": 109.537536,
+    "category": "生滚海鲜粥",
+    "tag": "顺德砂锅生滚海鲜粥/自炸松脆油条/夜宵首选",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区迎宾路三亚程信实业有限公司旁"
+  },
+  {
+    "id": 110,
+    "name": "李记蜂蜜脆皮烤鸭",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.299225,
+    "lng": 109.522388,
+    "category": "特色烤鸭",
+    "tag": "荔枝沟人气明炉蜂蜜脆皮烤鸭/色泽红亮外脆里嫩",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区新中路西十一巷229-1"
+  },
+  {
+    "id": 111,
+    "name": "老林记串串香",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.296125,
+    "lng": 109.526325,
+    "category": "串串火锅",
+    "tag": "荔枝沟夜市热锅冷锅串串/本地学生老饕聚集地",
+    "source": "抖音分享",
+    "address": "三亚市吉阳区荔枝沟158-4号"
+  },
+  {
+    "id": 112,
+    "name": "符姐金牌海南粉(龙华店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.036745,
+    "lng": 110.335958,
+    "category": "海南粉",
+    "tag": "2025大众点评必吃榜/招牌海南粉/海螺汤/抱罗粉（06:00-21:00）",
+    "source": "大众点评",
+    "address": "海口市龙华路22号（喜来咖啡旁）"
+  },
+  {
+    "id": 113,
+    "name": "青石烧烤(玉沙国际店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.024328,
+    "lng": 110.319638,
+    "category": "延边烧烤",
+    "tag": "2025大众点评必吃榜/掌中宝/烤五花肉/延边冷面",
+    "source": "大众点评",
+    "address": "海口市玉沙路玉沙国际一楼101商铺"
+  },
+  {
+    "id": 114,
+    "name": "聚福安·传统老爸茶(大英店)",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.029471,
+    "lng": 110.345334,
+    "category": "老爸茶",
+    "tag": "2025大众点评必吃榜/酱汁凤爪/红米虾肠/小福安鸡翅",
+    "source": "大众点评",
+    "address": "海口市海府街道大英路69号嘉茂大厦2楼"
+  },
+  {
+    "id": 115,
+    "name": "东记清补凉(五指山店)",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.030511,
+    "lng": 110.347666,
+    "category": "清补凉",
+    "tag": "2025大众点评必吃榜/椰奶清补凉/斑斓冰沙清补凉/芒果肠粉",
+    "source": "大众点评",
+    "address": "海口市五指山路11院"
+  },
+  {
+    "id": 116,
+    "name": "武国·四物椰鸡·养生餐厅(海控国际店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.023576,
+    "lng": 110.30664,
+    "category": "椰子鸡",
+    "tag": "2025大众点评必吃榜/四物椰鸡/四物鸡汤/生上文昌鸡",
+    "source": "大众点评",
+    "address": "海口市滨海大道109-9号海控国际广场C座1层011号"
+  },
+  {
+    "id": 117,
+    "name": "牛排王糟粕醋火锅(海甸分店)",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.049459,
+    "lng": 110.344478,
+    "category": "糟粕醋火锅",
+    "tag": "2025大众点评必吃榜/糟粕醋火锅/本地嫩牛肉/纯手工牛肉丸",
+    "source": "大众点评",
+    "address": "海口市海甸二东路水岸星城A区2栋-3号"
+  },
+  {
+    "id": 118,
+    "name": "老潮汕小馆(秀英炮台店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.018293,
+    "lng": 110.30619,
+    "category": "潮汕小吃",
+    "tag": "2025大众点评必吃榜/海鲜沙茶面/猪虾沙茶捞面/绿豆爽",
+    "source": "大众点评",
+    "address": "海口市世贸南路世贸公寓一楼"
+  },
+  {
+    "id": 119,
+    "name": "鸽先生(世贸店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.020612,
+    "lng": 110.304497,
+    "category": "养生炖汤",
+    "tag": "2025大众点评必吃榜/玉竹无花果炖全鸽/全鸽养生汤/腊味饭",
+    "source": "大众点评",
+    "address": "海口市金贸西路1号富丽花园1层"
+  },
+  {
+    "id": 120,
+    "name": "梁庄琼味酒楼(金贸店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.018472,
+    "lng": 110.300618,
+    "category": "琼菜酒楼",
+    "tag": "2025大众点评必吃榜/白切文昌鸡/至尊叉烧包/咸水鸭",
+    "source": "大众点评",
+    "address": "海口市文华路8号金贸文华农贸市场1楼"
+  },
+  {
+    "id": 121,
+    "name": "湘惠馆·湖南家宴(海甸岛店)",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.058019,
+    "lng": 110.340032,
+    "category": "湘菜",
+    "tag": "2025大众点评必吃榜/私房豆腐/嫩仔牛肉/松涛浓汤鱼头",
+    "source": "大众点评",
+    "address": "海口市人民大道39号南苑大厦1-2层"
+  },
+  {
+    "id": 122,
+    "name": "胡姐家齐齐哈尔烤肉(美兰店)",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.051735,
+    "lng": 110.351444,
+    "category": "东北烤肉",
+    "tag": "2025大众点评必吃榜/齐市手切牛上脑/调味牛五花/酸甜冷面",
+    "source": "大众点评",
+    "address": "海口市海甸二东路35号"
+  },
+  {
+    "id": 123,
+    "name": "满香小镇(环湖路店)",
+    "city": "海口",
+    "district": "琼山区",
+    "lat": 20.00627,
+    "lng": 110.353737,
+    "category": "龙虾夜宵",
+    "tag": "2025大众点评必吃榜/蒜蓉龙虾/香辣小龙虾/鸭下巴",
+    "source": "大众点评",
+    "address": "海口市环湖路中交欢乐湖岸117号铺面"
+  },
+  {
+    "id": 124,
+    "name": "筑下栖食(城西路店)",
+    "city": "海口",
+    "district": "琼山区",
+    "lat": 19.993254,
+    "lng": 110.340116,
+    "category": "融合菜",
+    "tag": "2025大众点评必吃榜/有机蔬菜可颂/蟹籽海鲜黑豆腐/番茄百香果牛肉",
+    "source": "大众点评",
+    "address": "海口市城西路1号栖酒店一楼"
+  },
+  {
+    "id": 125,
+    "name": "六味牛杂煲·斋菜煲(桫椤湾店)",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.01998,
+    "lng": 110.375349,
+    "category": "牛杂煲",
+    "tag": "2025大众点评必吃榜/招牌牛杂煲/糟粕醋斋菜煲/炸腐竹",
+    "source": "大众点评",
+    "address": "海口市国兴大道63号桫椤湾艺术风情街一楼"
+  },
+  {
+    "id": 126,
+    "name": "今藏乌·寿喜烧专门店(友谊南海城店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 19.996264,
+    "lng": 110.296628,
+    "category": "日式寿喜烧",
+    "tag": "2025大众点评必吃榜/招牌寿喜烧/澳洲霜降和牛/炙烧蟹棒手握",
+    "source": "大众点评",
+    "address": "海口市南海大道115号友谊南海城5层"
+  },
+  {
+    "id": 127,
+    "name": "Simple Yummy简单美味欢乐餐厅(吾悦店)",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 19.97753,
+    "lng": 110.339796,
+    "category": "海鲜餐厅",
+    "tag": "2025大众点评必吃榜/椒盐皮皮虾/香辣蟹/蒜蓉生蚝",
+    "source": "大众点评",
+    "address": "海口市迎宾大道18号新城吾悦广场3楼3028号"
+  },
+  {
+    "id": 128,
+    "name": "牛局别馆·和牛烧肉(远大购物中心店)",
+    "city": "海口",
+    "district": "秀英区",
+    "lat": 20.047767,
+    "lng": 110.191374,
+    "category": "日式烧肉",
+    "tag": "2025大众点评必吃榜/汁烧牛五花/究极厚切黑牛舌/壶渍牛小排",
+    "source": "大众点评",
+    "address": "海口市长滨四路7号远大购物中心北馆5F"
+  },
+  {
+    "id": 129,
+    "name": "力哥地道海南菜·联谊文昌鸡老店",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.651476,
+    "lng": 110.968652,
+    "category": "文昌鸡老店",
+    "tag": "大众点评人气老店/自养椰子鸡/白切鸡/椰子鸡火锅",
+    "source": "大众点评",
+    "address": "文昌市龙楼镇新兴街70号"
+  },
+  {
+    "id": 130,
+    "name": "符记正宗文昌鸡老店·后院自养农家鸡",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.649895,
+    "lng": 110.972131,
+    "category": "文昌鸡老店",
+    "tag": "大众点评人气老店/后院自养农家鸡/白切鸡/鸡油饭",
+    "source": "大众点评",
+    "address": "文昌市龙楼镇文铜路79号"
+  },
+  {
+    "id": 131,
+    "name": "全彬农家文昌鸡美食城·自家自养文昌鸡",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.646755,
+    "lng": 110.988867,
+    "category": "文昌鸡农家乐",
+    "tag": "大众点评人气老店/自家自养文昌鸡/椰子鸡/甜酸鱼",
+    "source": "大众点评",
+    "address": "文昌市铜鼓岭龙楼镇鲁能山海天淇水湾伍号"
+  },
+  {
+    "id": 132,
+    "name": "清泉中西茶园(文昌龙楼铜鼓岭店)",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.650157,
+    "lng": 110.97178,
+    "category": "老爸茶",
+    "tag": "大众点评人气老店/芋泥南瓜酥/虾饺/椰子包/干腌粉",
+    "source": "大众点评",
+    "address": "文昌市钻石大道与龙海路交叉口东240米"
+  },
+  {
+    "id": 133,
+    "name": "乐家家茶饭店",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.650101,
+    "lng": 111.007246,
+    "category": "农家茶饭",
+    "tag": "大众点评人气老店/干煸鸡/干烧鸭子/本地农家菜",
+    "source": "大众点评",
+    "address": "文昌市龙楼镇红海村委会好圣村九号门牌"
+  },
+  {
+    "id": 134,
+    "name": "阿弄糟粕醋",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.654347,
+    "lng": 110.968651,
+    "category": "糟粕醋",
+    "tag": "大众点评人气老店/海鲜糟粕醋/牛杂糟粕醋/猪杂糟粕醋",
+    "source": "大众点评",
+    "address": "文昌市龙楼镇新兴路与龙西路交叉口西南40米"
+  },
+  {
+    "id": 135,
+    "name": "阿侬盐焗鸡(清澜店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "lat": 19.563209,
+    "lng": 110.821393,
+    "category": "盐焗鸡",
+    "tag": "大众点评人气老店/文昌鸡盐焗/外香里嫩/本地人推荐",
+    "source": "大众点评",
+    "address": "文昌市文城镇清澜路39号"
+  },
+  {
+    "id": 136,
+    "name": "万香源中西茶店(清澜集贸市场店)",
+    "city": "文昌",
+    "district": "文城镇",
+    "lat": 19.562131,
+    "lng": 110.817766,
+    "category": "老爸茶",
+    "tag": "大众点评人气老店/豉油蒸鸡爪/菠萝油条/虾饺皇",
+    "source": "大众点评",
+    "address": "文昌市文城镇清澜路85号"
+  },
+  {
+    "id": 137,
+    "name": "恒味椰奶鸡(恒味椰奶鸡店)",
+    "city": "文昌",
+    "district": "东郊镇",
+    "lat": 19.531492,
+    "lng": 110.85055,
+    "category": "椰奶鸡",
+    "tag": "大众点评人气老店/椰奶鸡火锅/东郊椰林本地风味",
+    "source": "大众点评",
+    "address": "文昌市东郊镇建华山19号"
+  },
+  {
+    "id": 138,
+    "name": "瑞丰椰子鸡(小岛民店)",
+    "city": "文昌",
+    "district": "东郊镇",
+    "lat": 19.529758,
+    "lng": 110.85092,
+    "category": "椰子鸡",
+    "tag": "大众点评人气老店/椰浆锅底/东郊椰林/本地散养鸡",
+    "source": "大众点评",
+    "address": "文昌市东郊椰林风景名胜区椰林湾路百莱玛度假村东北门向东60米"
+  },
+  {
+    "id": 139,
+    "name": "西江月·椰奶鸡饭店",
+    "city": "文昌",
+    "district": "东郊镇",
+    "lat": 19.531222,
+    "lng": 110.855875,
+    "category": "椰奶鸡",
+    "tag": "大众点评人气老店/椰奶鸡火锅/椰子饭/清蒸海鲜",
+    "source": "大众点评",
+    "address": "文昌市建华山村委会港门村53号"
+  },
+  {
+    "id": 140,
+    "name": "后村烧鸡",
+    "city": "文昌",
+    "district": "东郊镇",
+    "lat": 19.580531,
+    "lng": 110.868644,
+    "category": "炭火烧鸡",
+    "tag": "大众点评人气老店/炭火烤小土鸡/烤鱼/炸虾",
+    "source": "大众点评",
+    "address": "文昌市183县道与椰林路交叉口西40米"
+  },
+  {
+    "id": 141,
+    "name": "一家海鲜坊(石头公园店)",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.638009,
+    "lng": 111.026381,
+    "category": "海鲜餐厅",
+    "tag": "大众点评人气老店/石斑鱼/红甲蟹/野生鲍鱼/豆豉蒸海鳗",
+    "source": "大众点评",
+    "address": "文昌市龙楼镇红海村委会古松村15号"
+  }
+];
+
+  const SPOTS = [
+  {
+    "id": 101,
+    "name": "骑楼老街",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.045,
+    "lng": 110.3475,
+    "tag": "百年南洋骑楼群 · 拍照漫游",
+    "type": "人文历史",
+    "desc": "南洋风建筑活化石，步行可探访多处老字号小吃与老铺（D1傍晚）"
+  },
+  {
+    "id": 102,
+    "name": "云洞图书馆",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.0467,
+    "lng": 110.3164,
+    "tag": "海口湾落日地标 · 极简建筑",
+    "type": "网红打卡",
+    "desc": "面朝大海的白色诗意洞穴建筑（世纪广场路1号），旁临世纪公园滨海步道（D2午后）"
+  },
+  {
+    "id": 103,
+    "name": "海大南门夜市",
+    "city": "海口",
+    "district": "美兰区",
+    "lat": 20.0502,
+    "lng": 110.3366,
+    "tag": "海口第一烟火夜市 · 17:00开市",
+    "type": "夜市地标",
+    "desc": "封路变夜市（海甸三西路与海富街交叉口西南侧），百余家明码标价小吃摊，清补凉/酸粉齐备（D1夜）"
+  },
+  {
+    "id": 104,
+    "name": "世纪公园海滩",
+    "city": "海口",
+    "district": "龙华区",
+    "lat": 20.0465,
+    "lng": 110.3168,
+    "tag": "世纪大桥下 · 踩浪发呆",
+    "type": "滨海休闲",
+    "desc": "世纪大桥下·海口湾落日滨海步道·云洞图书馆旁"
+  },
+  {
+    "id": 105,
+    "name": "海南省博物馆",
+    "city": "海口",
+    "district": "琼山区",
+    "lat": 20.0153,
+    "lng": 110.379,
+    "tag": "国家一级馆 · 苏东坡展厅",
+    "type": "文化博览",
+    "desc": "馆藏文物丰富（国兴大道76号），免费公众号预约，9:00–17:00开放（雨天高品质备选）"
+  },
+  {
+    "id": 106,
+    "name": "文南老街",
+    "city": "文昌",
+    "district": "文城镇",
+    "lat": 19.615,
+    "lng": 110.7528,
+    "tag": "南洋风华侨老街 · 傍晚常有舞狮",
+    "type": "人文历史",
+    "desc": "1920年代回乡华侨修建，骑楼沿河而建，慢节奏漫步绝佳（D2傍晚）"
+  },
+  {
+    "id": 107,
+    "name": "东郊椰林",
+    "city": "文昌",
+    "district": "东郊镇",
+    "lat": 19.5325,
+    "lng": 110.8653,
+    "tag": "50万株椰树 · 骑行吊床慢生活",
+    "type": "自然风光",
+    "desc": "万亩椰海遮阴避暑（东郊镇海滨半岛），林间小径通海滩，现砍椰子与农家乐（D3全天）"
+  },
+  {
+    "id": 108,
+    "name": "铺前老街与渔港",
+    "city": "文昌",
+    "district": "铺前镇",
+    "lat": 20.0235,
+    "lng": 110.5818,
+    "tag": "海文大桥旁古港 · 糟粕醋源头",
+    "type": "人文历史",
+    "desc": "海南古老商港（铺前镇胜利街），骑楼沧桑斑驳，正宗铺前糟粕醋发源地"
+  },
+  {
+    "id": 109,
+    "name": "高隆湾海滨",
+    "city": "文昌",
+    "district": "文城镇",
+    "lat": 19.5305,
+    "lng": 110.8147,
+    "tag": "水清沙平 · 鲜活海鲜加工",
+    "type": "滨海休闲",
+    "desc": "文昌主海滨休闲带（白金路153号旅游度假区），配套海鲜交易码头与观海木栈道"
+  },
+  {
+    "id": 110,
+    "name": "文昌孔庙",
+    "city": "文昌",
+    "district": "文城镇",
+    "lat": 19.6173,
+    "lng": 110.7535,
+    "tag": "岭南第一古庙 · 明清古建筑群",
+    "type": "古迹胜景",
+    "desc": "文昌古代教育摇篮与文化名胜（文东路77号），门票13元，8:30–18:00，文城镇步行可达（D2备选）"
+  },
+  {
+    "id": 111,
+    "name": "后海村(藤海渔村)",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.2723,
+    "lng": 109.7291,
+    "tag": "冲浪乌托邦 · 浪人夜生活",
+    "type": "特色村落",
+    "desc": "浪平坡缓的中国冲浪新手胜地，村内民谣酒馆与慢节奏据点（D3-D5连住）"
+  },
+  {
+    "id": 112,
+    "name": "皇后湾灯塔日落",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.272,
+    "lng": 109.7311,
+    "tag": "后海标志日落机位 · 海浪与灯塔",
+    "type": "日落景观",
+    "desc": "后海沙滩尽头灯塔，傍晚情侣与浪人看夕阳的最佳取景地（D4日落）"
+  },
+  {
+    "id": 113,
+    "name": "蜈支洲岛",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.3106,
+    "lng": 109.7661,
+    "tag": "中国PADI五星潜水点 · 情人桥",
+    "type": "海岛度假",
+    "desc": "玻璃海质与丰富珊瑚礁，环岛电瓶车观海观日岩（D5全天深度游）"
+  },
+  {
+    "id": 114,
+    "name": "亚龙湾沙滩",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.2287,
+    "lng": 109.6447,
+    "tag": "天下第一湾 · 7公里银白沙滩",
+    "type": "滨海休闲",
+    "desc": "沙质细腻如粉，水质清澈（龙海路），高端海景度假酒店与海边躺平（D6/D7重点）"
+  },
+  {
+    "id": 115,
+    "name": "热带天堂森林公园",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.2542,
+    "lng": 109.6441,
+    "tag": "天下第一湾俯瞰 · 过江龙索桥",
+    "type": "自然风光",
+    "desc": "电影《非诚勿扰2》取景地（亚龙湾国家旅游度假区），天然大氧吧，全海景玻璃栈道鸟瞰亚龙湾全景（D6下午）"
+  },
+  {
+    "id": 116,
+    "name": "三亚国际免税城",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.372,
+    "lng": 109.7507,
+    "tag": "全球最大单体免税店 · 购物地标",
+    "type": "购物娱乐",
+    "desc": "海棠花造型建筑群（海棠北路118号），离岛免税购物与特色餐饮汇集（D6傍晚取货补购）"
+  },
+  {
+    "id": 117,
+    "name": "西岛(西岛渔村)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.238,
+    "lng": 109.378,
+    "tag": "原生态渔村慢游 · 珊瑚礁牛王岭",
+    "type": "海岛度假",
+    "desc": "四百年历史渔村，租电驴环岛，牛王岭木栈道，玻璃海浮潜（D8全天深度游）"
+  },
+  {
+    "id": 118,
+    "name": "海月广场与椰梦长廊",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.2591,
+    "lng": 109.4943,
+    "tag": "二十里椰林画廊 · 三亚最美夕阳",
+    "type": "滨海休闲",
+    "desc": "三亚湾核心落日观赏点（迎宾路9号海月广场），傍晚橙红晚霞落入海平面，椰树海风步道（D8日落）"
+  },
+  {
+    "id": 119,
+    "name": "鹿回头风景区",
+    "city": "三亚",
+    "district": "吉阳区",
+    "lat": 18.2256,
+    "lng": 109.5021,
+    "tag": "三亚城市全景 · 爱情神话雕塑",
+    "type": "夜景胜地",
+    "desc": "免费入园（吉阳区鹿岭路，8:00–22:30），三面环海制高点俯瞰三亚全城万家灯火与三亚湾夜色（D8晚收官）"
+  },
+  {
+    "id": 120,
+    "name": "天涯小镇(马岭社区)",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.3044,
+    "lng": 109.3319,
+    "tag": "圣托里尼蓝白风 · 直通大海的巷子",
+    "type": "特色村落",
+    "desc": "五龙/黑龙街巷直通沙滩海浪（凤凰镇马岭社区），文艺咖啡馆与海边打卡胜地，西岛对岸（D8备选）"
+  },
+  {
+    "id": 121,
+    "name": "林旺夜市",
+    "city": "三亚",
+    "district": "海棠区",
+    "lat": 18.3121,
+    "lng": 109.7033,
+    "tag": "林旺镇烟火夜市 · 海鲜烧烤",
+    "type": "夜市地标",
+    "desc": "海棠湾\"深夜食堂\"，海鲜大排档/烧烤/炒冰冰补凉齐备，17:00–01:00 营业（人均约¥72），后海打车约 15 分钟（D3 夜备选）"
+  },
+  {
+    "id": 122,
+    "name": "文昌淇水湾海滩",
+    "city": "文昌",
+    "district": "龙楼镇",
+    "lat": 19.6015,
+    "lng": 110.9858,
+    "tag": "航天发射观景海湾 · 椰林沙滩",
+    "type": "自然风光",
+    "desc": "希尔顿海滨·航天发射壮美观礼海岸"
+  },
+  {
+    "id": 123,
+    "name": "第一市场",
+    "city": "三亚",
+    "district": "天涯区",
+    "lat": 18.2382,
+    "lng": 109.5086,
+    "tag": "海鲜集散地 · 加工一条街",
+    "type": "市场烟火",
+    "desc": "三亚最大海鲜集散市场（新建街155号），海鲜档 6:00–19:00、夜市至 22:00+，进场免费，自选现买后交加工店制作（D7 晚餐主场）"
+  }
+];
+
+  /* ==========================================================================
+     核心数学算法：坐标转换 (WGS-84 -> GCJ-02) 与 直线球面测距 (Haversine)
+     ========================================================================== */
+  const PI = Math.PI;
+  const A = 6378245.0;
+  const EE = 0.00669342162296594323;
+
+  function transformLat(x, y) {
+    let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+    ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+    ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+    return ret;
+  }
+
+  function transformLng(x, y) {
+    let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+    ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+    ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+    ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+    return ret;
+  }
+
+  // WGS-84 转换为 GCJ-02 (仅作为浏览器原生定位备用)
+  function wgs84ToGcj02(lat, lng) {
+    const dLat = transformLat(lng - 105.0, lat - 35.0);
+    const dLng = transformLng(lng - 105.0, lat - 35.0);
+    const radLat = lat / 180.0 * PI;
+    let magic = Math.sin(radLat);
+    magic = 1 - EE * magic * magic;
+    const sqrtMagic = Math.sqrt(magic);
+    const mLat = (dLat * 180.0) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI);
+    const mLng = (dLng * 180.0) / (A / sqrtMagic * Math.cos(radLat) * PI);
+    return { lat: lat + mLat, lng: lng + mLng };
+  }
+
+  // Haversine 球面直线距离测算 (km)
+  function calcDist(lat1, lng1, lat2, lng2) {
+    const R = 6371.0;
+    const dLat = (lat2 - lat1) * PI / 180.0;
+    const dLng = (lng2 - lng1) * PI / 180.0;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * PI / 180.0) * Math.cos(lat2 * PI / 180.0) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function formatDist(km) {
+    if (km === undefined || km === null || isNaN(km)) return '--';
+    if (km < 1) {
+      return Math.round(km * 1000) + ' m';
+    }
+    return km.toFixed(1) + ' km';
+  }
+
+  /* ==========================================================================
+     全局状态管理
+     ========================================================================== */
+  let map = null;
+  let currentMode = 'food'; // 'food' 美食模式 | 'spot' 景点模式
+  let currentCity = 'all';  // 城市筛选
+  let userLocation = null;  // { lat, lng, label }
+  let selectedSpot = null;  // 选定基准景点
+  let activeItemId = null;  // 当前高亮项 ID
+  let searchKeyword = '';   // 搜索词
+  let searchDebounceTimer = null;
+
+  // Marker 引用与带类型命名空间的活跃状态，避免美食/景点 ID 冲突
+  const foodMarkerRegistry = new Map();
+  const spotMarkerRegistry = new Map();
+  const CITY_CENTERS = {
+    '海口': [110.335, 20.035],
+    '文昌': [110.780, 19.610],
+    '三亚': [109.575, 18.285],
+    '临高': [109.685, 19.905]
+  };
+
+  // 高德原生覆盖物组 (OverlayGroup)
+  let foodMarkersGroup = null;
+  let spotMarkersGroup = null;
+  let userLocGroup = null;
+  let guideLineGroup = null;
+  let foodMarkersAggregated = false;
+  let mapTileWatchdog = null;
+
+  // 全局唯一自定义 InfoWindow
+  let currentInfoWindow = null;
+
+  function getActiveKey(type, id) {
+    return type + ':' + id;
+  }
+
+  function isItemActive(type, id) {
+    return activeItemId === getActiveKey(type, id);
+  }
+
+  function setActiveItem(type, id) {
+    activeItemId = id === null || id === undefined ? null : getActiveKey(type, id);
+  }
+
+  function clearOverlayGroup(group) {
+    if (group) group.clearOverlays();
+  }
+
+  function getFoodMarkerContent(item, isActive) {
+    const cityClass = item.city === '文昌' ? 'wc' : (item.city === '三亚' ? 'sy' : (item.city === '临高' ? 'lg' : 'hk'));
+    return '<div class="marker-food ' + cityClass + ' ' + (isActive ? 'active' : '') + '"><span>' + item.id + '</span></div>';
+  }
+
+  function getCityMarkerContent(city, count) {
+    const cityClass = city === '文昌' ? 'wc' : (city === '三亚' ? 'sy' : (city === '临高' ? 'lg' : 'hk'));
+    const suffix = currentMode === 'food' ? '家' : '处';
+    return '<div class="marker-city ' + cityClass + '"><strong>' + city + '</strong><span>' + count + suffix + '</span></div>';
+  }
+
+  function getSpotMarkerContent(isActive) {
+    return '<div class="marker-spot ' + (isActive ? 'active' : '') + '"><span>🏝️</span></div>';
+  }
+
+  function syncActiveMarkers() {
+    foodMarkerRegistry.forEach(({ marker, item }) => {
+      marker.setContent(getFoodMarkerContent(item, isItemActive('food', item.id)));
+    });
+    spotMarkerRegistry.forEach(({ marker, item }) => {
+      marker.setContent(getSpotMarkerContent(isItemActive('spot', item.id)));
+    });
+  }
+
+  function hideMapFallback() {
+    const fallback = document.getElementById('map-fallback');
+    if (fallback) fallback.classList.remove('show');
+    const cityGrid = document.getElementById('offline-city-grid');
+    if (cityGrid) cityGrid.classList.remove('show');
+  }
+
+  function renderOfflineCityOverview() {
+    const grid = document.getElementById('offline-city-grid');
+    if (!grid) return;
+
+    const source = currentMode === 'food' ? FOODS : SPOTS;
+    const filtered = searchKeyword
+      ? source.filter(item => {
+          const corpus = (item.name + ' ' + (item.tag || '') + ' ' + (item.category || item.type || '') + ' ' + (item.address || item.desc || '')).toLowerCase();
+          return corpus.includes(searchKeyword);
+        })
+      : source;
+
+    const cityOrder = ['海口', '文昌', '三亚', '临高'];
+    const groups = cityOrder.map(city => ({
+      city,
+      count: filtered.filter(item => item.city === city).length
+    })).filter(group => group.count > 0);
+    const suffix = currentMode === 'food' ? '家' : '处';
+
+    grid.innerHTML = groups.map(group => (
+      '<button type="button" class="offline-city-card" data-city="' + group.city + '">' +
+        '<strong>' + group.city + '</strong>' +
+        '<span>' + group.count + ' ' + suffix + '可浏览</span>' +
+      '</button>'
+    )).join('');
+
+    grid.querySelectorAll('.offline-city-card').forEach(button => {
+      button.addEventListener('click', () => {
+        const city = button.getAttribute('data-city');
+        const filterButton = [...document.querySelectorAll('.filter-pill')]
+          .find(item => item.textContent.trim() === city);
+        setCityFilter(city, filterButton);
+      });
+    });
+    grid.classList.add('show');
+  }
+
+  function showMapFallback(reason = 'sdk') {
+    const fallback = document.getElementById('map-fallback');
+    const title = document.getElementById('map-fallback-title');
+    const desc = document.getElementById('map-fallback-desc');
+    if (title) title.innerText = reason === 'tiles' ? '底图暂不可用' : '地图加载失败';
+    if (desc) {
+      desc.innerText = reason === 'tiles'
+        ? '高德底图资源未能加载，已切换到离线城市概览。下方列表仍可正常搜索、查看详情和导航。'
+        : '地图组件加载失败。仍可浏览下方列表，请检查网络后重新加载。';
+    }
+    renderOfflineCityOverview();
+    if (fallback) fallback.classList.add('show');
+  }
+
+  function clearMapTileWatchdog() {
+    if (mapTileWatchdog) {
+      clearTimeout(mapTileWatchdog);
+      mapTileWatchdog = null;
+    }
+  }
+
+  function watchMapTiles() {
+    clearMapTileWatchdog();
+    mapTileWatchdog = setTimeout(() => {
+      const stats = window.__amapTileStats || { success: 0, failure: 0 };
+      if (!navigator.onLine || (stats.failure >= 3 && stats.success === 0)) {
+        showMapFallback('tiles');
+      }
+    }, 6500);
+  }
+
+  window.addEventListener('offline', () => showMapFallback('tiles'), { passive: true });
+
+  function retryMapLoad() {
+    window.location.reload();
+  }
+
+  function initWithoutMap() {
+    map = null;
+    foodMarkersGroup = null;
+    spotMarkersGroup = null;
+    userLocGroup = null;
+    guideLineGroup = null;
+    currentInfoWindow = null;
+    foodMarkerRegistry.clear();
+    spotMarkerRegistry.clear();
+    clearMapTileWatchdog();
+    showMapFallback('sdk');
+    document.querySelectorAll('.fab-btn').forEach(btn => {
+      btn.disabled = true;
+      btn.setAttribute('aria-disabled', 'true');
+    });
+    renderCurrentState();
+  }
+
+  function initApp() {
+    setDrawerState(window.matchMedia('(min-width: 900px)').matches ? 'half' : 'collapsed');
+    document.querySelectorAll('.fab-btn[title]').forEach(btn => {
+      btn.setAttribute('aria-label', btn.getAttribute('title'));
+    });
+
+    if (window.__amapLoadFailed || typeof AMap === 'undefined') {
+      initWithoutMap();
+      return;
+    }
+
+    try {
+      initMap();
+      hideMapFallback();
+    } catch (err) {
+      console.error('地图初始化失败:', err);
+      if (map && typeof map.destroy === 'function') map.destroy();
+      initWithoutMap();
+    }
+  }
+
+  /* ==========================================================================
+     地图初始化 (高德 JS API 2.0)
+     ========================================================================== */
+  function initMap() {
+    map = new AMap.Map('map', {
+      viewMode: '2D',
+      zoom: 8,
+      center: [110.00, 19.20],
+      zooms: [6, 19],
+      resizeEnable: true,
+      touchZoomCenter: 1,
+      isHotspot: false // 彻底禁用高德底图自带热点POI，杜绝误触底图标注
+    });
+
+    // 创建覆盖物编组并加入地图
+    foodMarkersGroup = new AMap.OverlayGroup();
+    spotMarkersGroup = new AMap.OverlayGroup();
+    userLocGroup = new AMap.OverlayGroup();
+    guideLineGroup = new AMap.OverlayGroup();
+
+    map.add([foodMarkersGroup, spotMarkersGroup, userLocGroup, guideLineGroup]);
+
+    // 初始化自定义弹窗 (isCustom: true，offset: -38px 拉开 25px 物理安全间距，防止触碰Marker时误触按钮)
+    currentInfoWindow = new AMap.InfoWindow({
+      isCustom: true,
+      offset: new AMap.Pixel(0, -38),
+      closeWhenClickMap: true
+    });
+
+    // 核心交互：点击地图任意位置，将该坐标设为当前基准位置并重排最近列表。
+    map.on('click', (e) => {
+      if (currentInfoWindow) currentInfoWindow.close();
+      setUserLocation(e.lnglat.getLat(), e.lnglat.getLng(), "地图标注点");
+      showToast("已将地图点击处设为当前基准位置");
+    });
+
+    // 手机浏览器的地址栏和键盘会改变可视高度，初始化后多次校正容器尺寸。
+    // 大范围缩放时使用城市汇总标记，避免海口/三亚密集点位叠成一团。
+    map.on('zoomend', () => {
+      if (currentMode !== 'food') return;
+      const shouldAggregate = currentCity === 'all' && !searchKeyword && map.getZoom() < 9.5;
+      if (shouldAggregate !== foodMarkersAggregated) renderFoodMode();
+    });
+
+    // 初始渲染当前数据
+    renderCurrentState();
+
+    // 全岛视野居中。首次初始化不做 resize，避免部分 WebKit 内核计算中心点为 NaN。
+    fitAllPoints(true);
+    watchMapTiles();
+  }
+
+  /* ==========================================================================
+     模式与过滤控制器
+     ========================================================================== */
+  function switchMode(mode) {
+    if (currentMode === mode) return;
+    currentMode = mode;
+
+    document.getElementById('tab-food').classList.toggle('active', mode === 'food');
+    document.getElementById('tab-spot').classList.toggle('active', mode === 'spot');
+
+    clearOverlayGroup(guideLineGroup);
+    if (currentInfoWindow) currentInfoWindow.close();
+    activeItemId = null;
+
+    if (mode === 'food') {
+      document.getElementById('spot-banner').style.display = 'none';
+      selectedSpot = null;
+    }
+
+    renderCurrentState();
+    setDrawerState('half');
+  }
+
+  function setCityFilter(city, btn) {
+    currentCity = city;
+    document.querySelectorAll('.filter-pill').forEach(el => el.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+
+    if (currentInfoWindow) currentInfoWindow.close();
+    renderCurrentState();
+
+    if (city === 'all') {
+      fitAllPoints();
+    } else {
+      focusCityView(city);
+      if (!window.matchMedia('(min-width: 900px)').matches) {
+        setDrawerState('collapsed');
+      }
+    }
+  }
+
+  function onSearchInput(val, immediate = false) {
+    const normalizedKeyword = val.trim().toLowerCase();
+    const clearBtn = document.getElementById('search-clear-btn');
+    if (clearBtn) {
+      clearBtn.style.display = normalizedKeyword ? 'inline-flex' : 'none';
+    }
+    if (normalizedKeyword && drawerState === 'collapsed') {
+      setDrawerState('half');
+    }
+
+    clearTimeout(searchDebounceTimer);
+    const applySearch = () => {
+      searchKeyword = normalizedKeyword;
+      renderCurrentState();
+    };
+
+    if (immediate) {
+      applySearch();
+    } else {
+      searchDebounceTimer = setTimeout(applySearch, 120);
+    }
+  }
+
+  function clearSearch() {
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    onSearchInput('', true);
+  }
+
+  /* ==========================================================================
+     业务渲染总线
+     ========================================================================== */
+  function renderCurrentState() {
+    clearOverlayGroup(guideLineGroup);
+
+    if (currentMode === 'food') {
+      renderFoodMode();
+    } else {
+      renderSpotMode();
+    }
+
+    const fallback = document.getElementById('map-fallback');
+    if (fallback && fallback.classList.contains('show')) {
+      renderOfflineCityOverview();
+    }
+  }
+
+  // --- 美食模式渲染 ---
+  function renderFoodMode() {
+    clearOverlayGroup(spotMarkersGroup);
+    clearOverlayGroup(foodMarkersGroup);
+    foodMarkerRegistry.clear();
+    spotMarkerRegistry.clear();
+    document.getElementById('spot-banner').style.display = 'none';
+
+    let list = currentCity === 'all' ? [...FOODS] : FOODS.filter(f => f.city === currentCity);
+
+    if (searchKeyword) {
+      list = list.filter(item => {
+        const corpus = (item.name + ' ' + (item.tag||'') + ' ' + (item.category||'') + ' ' + (item.address||'') + ' ' + (item.district||'') + ' ' + (item.source||'')).toLowerCase();
+        return corpus.includes(searchKeyword);
+      });
+    }
+
+    if (userLocation) {
+      list.forEach(item => {
+        if (item.lat && item.lng) {
+          item._dist = calcDist(userLocation.lat, userLocation.lng, item.lat, item.lng);
+        } else {
+          item._dist = null;
+        }
+      });
+      list.sort((a, b) => {
+        if (a._dist === null) return 1;
+        if (b._dist === null) return -1;
+        return a._dist - b._dist;
+      });
+      document.getElementById('drawer-main-title').innerText = searchKeyword ? "搜索美食结果" : "离我最近的美食";
+    } else {
+      list.forEach(item => item._dist = null);
+      document.getElementById('drawer-main-title').innerText = searchKeyword ? "搜索美食结果" : "精选特色美食";
+    }
+    document.getElementById('drawer-count-badge').innerText = '(' + list.length + ' 家)';
+
+    // 绘制高德原生美食 Marker；全岛低缩放时用城市汇总，避免密集点位互相覆盖。
+    const markers = [];
+    if (map && foodMarkersGroup) {
+      foodMarkersAggregated = currentCity === 'all' && !searchKeyword && map.getZoom() < 9.5;
+      if (foodMarkersAggregated) {
+        const cityOrder = ['海口', '文昌', '三亚', '临高'];
+        cityOrder.forEach(city => {
+          const cityItems = list.filter(item => item.city === city);
+          if (!cityItems.length || !CITY_CENTERS[city]) return;
+          const marker = new AMap.Marker({
+            position: CITY_CENTERS[city],
+            content: getCityMarkerContent(city, cityItems.length),
+            offset: new AMap.Pixel(-34, -17),
+            anchor: 'center',
+            title: city + '美食汇总',
+            zIndex: 90
+          });
+          marker.on('click', (e) => {
+            if (e && e.originEvent) e.originEvent.stopPropagation();
+            const filterButton = [...document.querySelectorAll('.filter-pill')]
+              .find(item => item.textContent.trim() === city);
+            setCityFilter(city, filterButton);
+          });
+          markers.push(marker);
+        });
+      } else {
+        list.forEach(item => {
+          if (!item.lat || !item.lng) return;
+          const isActive = isItemActive('food', item.id);
+
+          const marker = new AMap.Marker({
+            position: [item.lng, item.lat],
+            content: getFoodMarkerContent(item, isActive),
+            offset: new AMap.Pixel(-13, -13),
+            anchor: 'center',
+            title: item.name,
+            extData: item
+          });
+
+          marker.on('click', (e) => {
+            if (e && e.originEvent) {
+              e.originEvent.stopPropagation();
+            }
+            selectItem(item.id, 'food');
+            openCustomPopup(item, 'food');
+          });
+
+          markers.push(marker);
+          foodMarkerRegistry.set(item.id, { marker, item });
+        });
+      }
+
+      foodMarkersGroup.addOverlays(markers);
+    }
+    renderFoodCards(list);
+  }
+
+  // --- 景点模式渲染 ---
+  function renderSpotMode() {
+    clearOverlayGroup(spotMarkersGroup);
+    clearOverlayGroup(foodMarkersGroup);
+    foodMarkerRegistry.clear();
+    spotMarkerRegistry.clear();
+
+    if (!selectedSpot) {
+      document.getElementById('spot-banner').style.display = 'none';
+      document.getElementById('drawer-main-title').innerText = "海南打卡景点";
+
+      let list = currentCity === 'all' ? [...SPOTS] : SPOTS.filter(s => s.city === currentCity);
+
+      if (searchKeyword) {
+        list = list.filter(s => {
+          const corpus = (s.name + ' ' + (s.tag||'') + ' ' + (s.type||'') + ' ' + (s.desc||'') + ' ' + (s.district||'')).toLowerCase();
+          return corpus.includes(searchKeyword);
+        });
+        document.getElementById('drawer-main-title').innerText = "搜索景点结果";
+      }
+
+      if (userLocation) {
+        list.forEach(s => s._dist = calcDist(userLocation.lat, userLocation.lng, s.lat, s.lng));
+        list.sort((a, b) => a._dist - b._dist);
+      } else {
+        list.forEach(s => s._dist = null);
+      }
+      document.getElementById('drawer-count-badge').innerText = '(' + list.length + ' 处)';
+
+      const markers = [];
+      if (map && spotMarkersGroup) {
+        list.forEach(item => {
+          const isActive = isItemActive('spot', item.id);
+          const marker = new AMap.Marker({
+            position: [item.lng, item.lat],
+            content: getSpotMarkerContent(isActive),
+            offset: new AMap.Pixel(-14, -14),
+            anchor: 'center',
+            title: item.name,
+            extData: item
+          });
+
+          marker.on('click', (e) => {
+            if (e && e.originEvent) {
+              e.originEvent.stopPropagation();
+            }
+            chooseSpot(item);
+            openCustomPopup(item, 'spot');
+          });
+
+          markers.push(marker);
+          spotMarkerRegistry.set(item.id, { marker, item });
+        });
+
+        spotMarkersGroup.addOverlays(markers);
+      }
+      renderSpotCards(list);
+    } else {
+      // 已选景点态：高亮景点 + 呈现周边美食
+      document.getElementById('spot-banner').style.display = 'flex';
+      document.getElementById('banner-spot-name').innerText = '🏝️ ' + selectedSpot.name;
+      document.getElementById('drawer-main-title').innerText = "周边美食推荐";
+
+      // 绘制中心景点
+      if (map && spotMarkersGroup) {
+        const spotMarker = new AMap.Marker({
+          position: [selectedSpot.lng, selectedSpot.lat],
+          content: getSpotMarkerContent(true),
+          offset: new AMap.Pixel(-16, -16),
+          anchor: 'center',
+          zIndex: 120,
+          title: selectedSpot.name,
+          extData: selectedSpot
+        });
+        spotMarker.on('click', (e) => {
+          if (e && e.originEvent) {
+            e.originEvent.stopPropagation();
+          }
+          openCustomPopup(selectedSpot, 'spot');
+        });
+        spotMarkersGroup.addOverlays([spotMarker]);
+        spotMarkerRegistry.set(selectedSpot.id, { marker: spotMarker, item: selectedSpot });
+      }
+
+      // 计算当前城市筛选范围内美食到该选定景点的距离并排序
+      let foodsList = FOODS.filter(f => f.lat && f.lng && (currentCity === 'all' || f.city === currentCity)).map(f => {
+        return {
+          ...f,
+          _dist: calcDist(selectedSpot.lat, selectedSpot.lng, f.lat, f.lng)
+        };
+      });
+
+      if (searchKeyword) {
+        foodsList = foodsList.filter(f => {
+          const corpus = (f.name + ' ' + (f.tag||'') + ' ' + (f.category||'') + ' ' + (f.address||'') + ' ' + (f.district||'') + ' ' + (f.source||'')).toLowerCase();
+          return corpus.includes(searchKeyword);
+        });
+      }
+
+      foodsList.sort((a, b) => a._dist - b._dist);
+      document.getElementById('drawer-count-badge').innerText = "(按距该景点由近至远)";
+
+      // 将最近的 15 家美食在地图上显现
+      const nearMarkers = [];
+      if (map && foodMarkersGroup) {
+        foodsList.slice(0, 15).forEach(item => {
+          const isActive = isItemActive('food', item.id);
+          const marker = new AMap.Marker({
+            position: [item.lng, item.lat],
+            content: getFoodMarkerContent(item, isActive),
+            offset: new AMap.Pixel(-13, -13),
+            anchor: 'center',
+            title: item.name,
+            extData: item
+          });
+
+          marker.on('click', (e) => {
+            if (e && e.originEvent) {
+              e.originEvent.stopPropagation();
+            }
+            highlightSpotFoodPair(selectedSpot, item);
+            openCustomPopup(item, 'food', selectedSpot);
+          });
+
+          nearMarkers.push(marker);
+          foodMarkerRegistry.set(item.id, { marker, item });
+        });
+
+        foodMarkersGroup.addOverlays(nearMarkers);
+      }
+      renderNearFoodCards(foodsList, selectedSpot);
+    }
+  }
+
+  /* ==========================================================================
+     列表 DOM 生成器
+     ========================================================================== */
+  function renderFoodCards(list) {
+    const container = document.getElementById('drawer-list');
+    if (!list.length) {
+      container.innerHTML = '<div class="empty-placeholder">该区域暂无美食记录</div>';
+      return;
+    }
+
+    container.innerHTML = list.map(item => {
+      const cityTagClass = getCityTagClass(item.city);
+      const sourceTagHtml = getSourceTagHtml(item.source);
+      const hasCoord = Boolean(item.lat && item.lng);
+      const distClass = (item._dist !== null && item._dist < 2.5) ? 'close' : ((item._dist !== null && item._dist > 20) ? 'far' : '');
+      const distanceLabel = !hasCoord ? '流动摊售' : (item._dist !== null ? '距当前约 ' + formatDist(item._dist) : '待定位');
+      const safeName = item.name.replace(/'/g, "\\'");
+      const safeCity = (item.city || '').replace(/'/g, "\\'");
+      const dpId = item.dpId ? item.dpId : '';
+      const navUrl = hasCoord ? getAmapNavUrl(item.lat, item.lng, item.name) : '#';
+
+      return `
+        <div class="item-card ${isItemActive('food', item.id) ? 'active' : ''}" id="card-item-${item.id}" onclick="selectItem(${item.id}, 'food')">
+          <div class="item-card-header">
+            <div class="item-card-title-wrap">
+              <span class="badge-id">${item.id}</span>
+              <span class="item-card-title">${item.name}</span>
+            </div>
+            <div class="item-card-tags">
+              ${sourceTagHtml}
+              <span class="tag-pill ${cityTagClass}">${item.city}</span>
+            </div>
+          </div>
+          <div class="item-card-desc">${item.category} · ${item.tag}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${item.address}</div>
+          <div class="item-card-footer">
+            <span class="distance-indicator ${distClass}">
+              ${distanceLabel}
+            </span>
+            <div class="card-actions" onclick="event.stopPropagation()">
+              ${hasCoord ? `
+                <button class="mini-btn" onclick="locateAndFly(${item.lat}, ${item.lng}, ${item.id}, 'food')">看地图</button>
+                <button type="button" class="mini-btn dp-link" onclick="safeJumpToDianping('${safeName}', '${safeCity}', '${dpId}')">大众点评</button>
+                <a class="mini-btn primary" href="${navUrl}" target="_blank" rel="noopener noreferrer">导航</a>
+              ` : `
+                <button type="button" class="mini-btn dp-link" onclick="safeJumpToDianping('${safeName}', '${safeCity}', '${dpId}')">大众点评</button>
+                <span style="font-size:10.5px;color:var(--text-muted);">流动摊位无固定店</span>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderSpotCards(list) {
+    const container = document.getElementById('drawer-list');
+    if (!list.length) {
+      container.innerHTML = '<div class="empty-placeholder">该区域暂无景点记录</div>';
+      return;
+    }
+
+    container.innerHTML = list.map(item => {
+      const cityTagClass = getCityTagClass(item.city);
+      const distStr = item._dist !== null ? '距当前约 ' + formatDist(item._dist) : '';
+      const navUrl = getAmapNavUrl(item.lat, item.lng, item.name);
+
+      return `
+        <div class="item-card ${isItemActive('spot', item.id) ? 'active' : ''}" id="card-item-${item.id}" onclick="chooseSpotById(${item.id})">
+          <div class="item-card-header">
+            <div class="item-card-title-wrap">
+              <span class="badge-id badge-spot">🏝️</span>
+              <span class="item-card-title">${item.name}</span>
+            </div>
+            <div class="item-card-tags">
+              <span class="tag-pill ${cityTagClass}">${item.city}</span>
+              <span class="tag-pill tag-spot">${item.type}</span>
+            </div>
+          </div>
+          <div class="item-card-desc">${item.tag}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${item.desc}</div>
+          <div class="item-card-footer">
+            <span class="distance-indicator">${distStr}</span>
+            <div class="card-actions" onclick="event.stopPropagation()">
+              <button type="button" class="mini-btn dp-link" onclick="safeJumpToDianping('${item.name.replace(/'/g, "\\'")}', '${(item.city || '').replace(/'/g, "\\'")}', '${item.dpId || ''}')">大众点评</button>
+              <a class="mini-btn" href="${navUrl}" target="_blank" rel="noopener noreferrer">导航</a>
+              <button class="mini-btn primary" onclick="chooseSpotById(${item.id})">看周边美食 →</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderNearFoodCards(foodsList, baseSpot) {
+    const container = document.getElementById('drawer-list');
+    container.innerHTML = foodsList.map(item => {
+      const cityTagClass = getCityTagClass(item.city);
+      const sourceTagHtml = getSourceTagHtml(item.source);
+      const distStr = formatDist(item._dist);
+      const distClass = item._dist < 2.5 ? 'close' : (item._dist > 25 ? 'far' : '');
+      const safeName = item.name.replace(/'/g, "\\'");
+      const safeCity = (item.city || '').replace(/'/g, "\\'");
+      const dpId = item.dpId ? item.dpId : '';
+      const navUrl = getAmapNavUrl(item.lat, item.lng, item.name);
+
+      return `
+        <div class="item-card ${isItemActive('food', item.id) ? 'active' : ''}" id="card-item-${item.id}" onclick="highlightSpotFoodPairById(${item.id})">
+          <div class="item-card-header">
+            <div class="item-card-title-wrap">
+              <span class="badge-id">${item.id}</span>
+              <span class="item-card-title">${item.name}</span>
+            </div>
+            <div class="item-card-tags">
+              ${sourceTagHtml}
+              <span class="tag-pill ${cityTagClass}">${item.city}</span>
+            </div>
+          </div>
+          <div class="item-card-desc">${item.category} · ${item.tag}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${item.address}</div>
+          <div class="item-card-footer">
+            <span class="distance-indicator ${distClass}">距景点 ${distStr}</span>
+            <div class="card-actions" onclick="event.stopPropagation()">
+              <button class="mini-btn" onclick="highlightSpotFoodPairById(${item.id})">连线测距</button>
+              <button type="button" class="mini-btn dp-link" onclick="safeJumpToDianping('${safeName}', '${safeCity}', '${dpId}')">大众点评</button>
+              <a class="mini-btn primary" href="${navUrl}" target="_blank" rel="noopener noreferrer">导航</a>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function getSourceTagHtml(source) {
+    if (!source) return '';
+    let cls = 'tag-src-rsj';
+    if (source === '行程自带') cls = 'tag-src-self';
+    else if (source === '网络补充') cls = 'tag-src-web';
+    else if (source === '小红书') cls = 'tag-src-xhs';
+    else if (source === '大众点评' || source === '点评高分老店') cls = 'tag-src-dp';
+    else if (source === '网红店') cls = 'tag-src-hot';
+    else if (source === '抖音分享') cls = 'tag-src-dy';
+    return '<span class="tag-pill ' + cls + '">' + source + '</span>';
+  }
+
+  function getCityTagClass(city) {
+    if (city === '文昌') return 'tag-wc';
+    if (city === '三亚') return 'tag-sy';
+    if (city === '临高') return 'tag-lg';
+    return 'tag-hk';
+  }
+
+  /* ==========================================================================
+     大众点评深度链接 (Deep Link) 与直达协议
+     优先调起大众点评 App 直达对应店铺，备用降级 Web 搜索
+     ========================================================================== */
+  function getDianpingDeepLink(name, city, dpId) {
+    if (dpId) {
+      return 'dianping://shopinfo?id=' + encodeURIComponent(dpId);
+    }
+    const query = (city ? (city + ' ') : '') + name;
+    return 'dianping://searchshoplist?keyword=' + encodeURIComponent(query);
+  }
+
+  function getDianpingWebUrl(name, city, dpId) {
+    if (dpId) {
+      return 'https://m.dianping.com/shop/' + encodeURIComponent(dpId);
+    }
+    const cityIds = {
+      '海口': 246,
+      '三亚': 247,
+      '文昌': 252,
+      '临高': 258
+    };
+    const cityId = cityIds[city] || 0;
+    const query = cityId ? name : ((city ? city + ' ' : '') + name);
+    return 'https://www.dianping.com/search/keyword/' + cityId + '/0_' + encodeURIComponent(query);
+  }
+
+  function getAmapNavUrl(lat, lng, name) {
+    return 'https://uri.amap.com/navigation?to=' + lng + ',' + lat + ',' + encodeURIComponent(name) + '&mode=car&policy=1&src=mypage&coordinate=gaode&callnative=1';
+  }
+
+  // 防穿透时间保护锁：防止点击小圆点时手指穿透或双击误触新弹出的跳转按钮
+  let lastPopupOpenTime = 0;
+
+  function safeJumpToDianping(name, city, dpId) {
+    // 弹窗打开 400ms 内的点击坚决拦截，视为误触穿透
+    if (Date.now() - lastPopupOpenTime < 400) {
+      console.warn('[Defense] 拦截幽灵穿透点击');
+      return;
+    }
+
+    const deepLink = getDianpingDeepLink(name, city, dpId);
+    const webUrl = getDianpingWebUrl(name, city, dpId);
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    if (isMobile) {
+      // 移动端优先通过 Deep Link 唤起手机中已安装的大众点评 App
+      const startTime = Date.now();
+      window.location.href = deepLink;
+
+      // 降级保护：若 1800ms 内未唤起（页面仍处于可见活跃态），引导打开 Web 搜索页
+      setTimeout(() => {
+        if (!document.hidden && Date.now() - startTime < 3000) {
+          window.open(webUrl, '_blank');
+        }
+      }, 1800);
+    } else {
+      // PC 端默认直接在新窗口打开大众点评 Web 搜索页
+      window.open(webUrl, '_blank');
+    }
+  }
+
+  function safeJumpToNav(url) {
+    if (Date.now() - lastPopupOpenTime < 400) return;
+    window.open(url, '_blank');
+  }
+
+  /* ==========================================================================
+     自定义 Notion 扁平弹窗 (AMap InfoWindow)
+     ========================================================================== */
+  function buildCustomPopupHtml(item, type, basePoint) {
+    const isFood = type === 'food';
+    const cityClass = getCityTagClass(item.city);
+    const navUrl = getAmapNavUrl(item.lat, item.lng, item.name);
+    const safeName = item.name.replace(/'/g, "\\'");
+    const safeCity = (item.city || '').replace(/'/g, "\\'");
+    const dpId = item.dpId ? item.dpId : '';
+
+    let distDesc = '';
+    if (basePoint) {
+      const d = calcDist(basePoint.lat, basePoint.lng, item.lat, item.lng);
+      distDesc = '<div style="font-size:11px;color:var(--color-blue);font-weight:600;">距' + basePoint.name + ': ' + formatDist(d) + '</div>';
+    } else if (userLocation) {
+      const d = calcDist(userLocation.lat, userLocation.lng, item.lat, item.lng);
+      distDesc = '<div style="font-size:11px;color:var(--color-green);font-weight:600;">距当前位置: ' + formatDist(d) + '</div>';
+    }
+
+    return `
+      <div class="custom-info-card opening" id="info-card-${item.id}">
+        <div class="custom-info-header">
+          <div class="custom-info-title-group">
+            <span class="badge-id ${isFood ? '' : 'badge-spot'}">${isFood ? item.id : '🏝️'}</span>
+            <span class="custom-info-title">${item.name}</span>
+          </div>
+          <button type="button" class="custom-info-close" onclick="closeCustomPopup()">✕</button>
+        </div>
+        <div class="custom-info-tags">
+          ${isFood ? getSourceTagHtml(item.source) : ''}
+          <span class="tag-pill ${cityClass}">${item.city}</span>
+          <span class="tag-pill ${isFood ? 'tag-src-web' : 'tag-spot'}">${isFood ? item.category : item.type}</span>
+        </div>
+        <div class="custom-info-desc">${isFood ? item.tag : item.desc}</div>
+        ${distDesc}
+        <div class="custom-info-addr">${item.address || (item.district + ' · 海南')}</div>
+        <div class="custom-info-actions">
+          <button type="button" class="custom-info-btn dp" onclick="safeJumpToDianping('${safeName}', '${safeCity}', '${dpId}')">⭐ 大众点评</button>
+          <button type="button" class="custom-info-btn nav" onclick="safeJumpToNav('${navUrl}')">🧭 一键导航</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function openCustomPopup(item, type, basePoint) {
+    if (!item.lat || !item.lng || !map || !currentInfoWindow) return;
+    lastPopupOpenTime = Date.now();
+    currentInfoWindow.setContent(buildCustomPopupHtml(item, type, basePoint));
+    currentInfoWindow.open(map, [item.lng, item.lat]);
+
+    // 延时 350ms 解除防误触锁，使按钮恢复可点击态
+    setTimeout(() => {
+      const card = document.getElementById('info-card-' + item.id);
+      if (card) card.classList.remove('opening');
+    }, 350);
+  }
+
+  function closeCustomPopup() {
+    if (currentInfoWindow) currentInfoWindow.close();
+  }
+
+  /* ==========================================================================
+     交互、连线与飞跃控制
+     ========================================================================== */
+  function selectItem(id, type) {
+    setActiveItem(type, id);
+    syncActiveMarkers();
+    const item = type === 'food' ? FOODS.find(x => x.id === id) : SPOTS.find(x => x.id === id);
+    if (!item) return;
+    if (!item.lat || !item.lng) {
+      showToast("该美食为流动摊售，无固定坐标");
+      highlightCardInList(id);
+      return;
+    }
+    if (!map) {
+      highlightCardInList(id);
+      return;
+    }
+    if (map.getZoom() < 12) {
+      map.setZoomAndCenter(13, [item.lng, item.lat]);
+    } else {
+      map.panTo([item.lng, item.lat]);
+    }
+    highlightCardInList(id);
+  }
+
+  function chooseSpotById(id) {
+    const spot = SPOTS.find(s => s.id === id);
+    if (spot) chooseSpot(spot);
+  }
+
+  function chooseSpot(spot) {
+    selectedSpot = spot;
+    setActiveItem('spot', spot.id);
+
+    if (map) map.setZoomAndCenter(13, [spot.lng, spot.lat]);
+    renderCurrentState();
+    setDrawerState('half');
+    showToast('已选择景点：' + spot.name);
+  }
+
+  function unselectSpot() {
+    selectedSpot = null;
+    activeItemId = null;
+    clearOverlayGroup(guideLineGroup);
+    if (currentInfoWindow) currentInfoWindow.close();
+    renderCurrentState();
+    fitAllPoints();
+  }
+
+  function highlightSpotFoodPairById(foodId) {
+    const food = FOODS.find(f => f.id === foodId);
+    if (food && selectedSpot) {
+      highlightSpotFoodPair(selectedSpot, food);
+      openCustomPopup(food, 'food', selectedSpot);
+    }
+  }
+
+  function highlightSpotFoodPair(spot, food) {
+    setActiveItem('food', food.id);
+    syncActiveMarkers();
+    if (!map || !guideLineGroup) {
+      highlightCardInList(food.id);
+      return;
+    }
+    clearOverlayGroup(guideLineGroup);
+
+    // 绘制高德原生虚线
+    const polyline = new AMap.Polyline({
+      path: [[spot.lng, spot.lat], [food.lng, food.lat]],
+      strokeColor: '#191919',
+      strokeWeight: 2.5,
+      strokeStyle: 'dashed',
+      strokeDasharray: [6, 6]
+    });
+
+    const dist = calcDist(spot.lat, spot.lng, food.lat, food.lng);
+    const midLng = (spot.lng + food.lng) / 2;
+    const midLat = (spot.lat + food.lat) / 2;
+
+    const distMarker = new AMap.Marker({
+      position: [midLng, midLat],
+      content: '<div class="distance-badge">' + formatDist(dist) + '</div>',
+      offset: new AMap.Pixel(-25, -10),
+      anchor: 'center'
+    });
+
+    guideLineGroup.addOverlays([polyline, distMarker]);
+
+    // 视野包裹两者
+    map.setFitView([polyline], false, [60, 60, 60, 60], 15);
+    highlightCardInList(food.id);
+  }
+
+  function highlightCardInList(id) {
+    document.querySelectorAll('.item-card').forEach(el => el.classList.remove('active'));
+    const targetCard = document.getElementById('card-item-' + id);
+    if (targetCard) {
+      targetCard.classList.add('active');
+      targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function locateAndFly(lat, lng, id, type) {
+    if (!map) {
+      showToast("地图暂不可用，请先重新加载地图");
+      return;
+    }
+    setDrawerState('collapsed');
+    map.setZoomAndCenter(15, [lng, lat]);
+    const item = type === 'food' ? FOODS.find(x => x.id === id) : SPOTS.find(x => x.id === id);
+    if (item) {
+      openCustomPopup(item, type);
+    }
+  }
+
+  /* ==========================================================================
+     高精定位体系 (优先高德官方原生定位插件 AMap.Geolocation，备用原生 GPS)
+     ========================================================================== */
+  function setUserLocation(lat, lng, label) {
+    userLocation = { lat, lng, label };
+
+    if (!map || !userLocGroup) {
+      renderCurrentState();
+      return;
+    }
+
+    userLocGroup.clearOverlays();
+
+    const userMarker = new AMap.Marker({
+      position: [lng, lat],
+      content: '<div class="marker-user" title="' + label + '"></div>',
+      offset: new AMap.Pixel(-7, -7),
+      anchor: 'center',
+      zIndex: 150
+    });
+
+    userLocGroup.addOverlays([userMarker]);
+
+    // 重新排序并渲染
+    renderCurrentState();
+  }
+
+  function locateMe(isUserClick = false) {
+    if (!map || typeof AMap === 'undefined') {
+      showToast("地图暂不可用，请先重新加载地图");
+      showMapFallback();
+      return;
+    }
+    if (isUserClick) showToast("正在调起高德高精定位...");
+
+    // 优先调用高德原生 Geolocation 插件
+    AMap.plugin('AMap.Geolocation', function() {
+      const geolocation = new AMap.Geolocation({
+        enableHighAccuracy: true,
+        timeout: 8000,
+        needAddress: false
+      });
+
+      geolocation.getCurrentPosition(function(status, result) {
+        if (status === 'complete') {
+          const lat = result.position.getLat();
+          const lng = result.position.getLng();
+          handleLocationSuccess(lat, lng, isUserClick);
+        } else {
+          // 高德定位遇到权限或环境限制，尝试原生 GPS 备用
+          fallbackNativeGeolocation(isUserClick);
+        }
+      });
+    });
+  }
+
+  function fallbackNativeGeolocation(isUserClick) {
+    if (!navigator.geolocation) {
+      if (isUserClick) {
+        showToast("定位受限，已为您打开坐标输入");
+        openInputModal();
+      }
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const gcj = wgs84ToGcj02(pos.coords.latitude, pos.coords.longitude);
+        handleLocationSuccess(gcj.lat, gcj.lng, isUserClick);
+      },
+      (err) => {
+        console.warn("定位失败:", err.message);
+        if (isUserClick) {
+          showToast("未能获取定位，请点击'📍'手动指定");
+          openInputModal();
+        }
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  }
+
+  function handleLocationSuccess(lat, lng, isUserClick) {
+    // 判断是否在海南岛地理范围内 (纬度 18.0~20.5, 经度 108.5~111.5)
+    const inHainan = (lat >= 18.0 && lat <= 20.5 && lng >= 108.5 && lng <= 111.5);
+
+    if (inHainan) {
+      setUserLocation(lat, lng, "我的位置");
+      if (map) map.setZoomAndCenter(13, [lng, lat]);
+      showToast("定位成功！已推荐离您最近的美食");
+    } else {
+      // 省外游客做规划：记录基准测距，但视角停留在海南全岛！
+      setUserLocation(lat, lng, "当前位置(省外)");
+      if (isUserClick) {
+        showToast("已获取定位(当前位于省外)，地图保持全岛视角");
+      }
+      fitAllPoints();
+    }
+  }
+
+  /* ==========================================================================
+     模态框控制器
+     ========================================================================== */
+  function openInputModal() {
+    document.getElementById('input-modal').classList.add('show');
+    if (userLocation) {
+      document.getElementById('coord-input').value = userLocation.lat.toFixed(4) + ', ' + userLocation.lng.toFixed(4);
+    }
+  }
+
+  function closeInputModal() {
+    document.getElementById('input-modal').classList.remove('show');
+  }
+
+  function submitCoordInput() {
+    const val = document.getElementById('coord-input').value.trim();
+    if (!val) return;
+    const parts = val.replace(/，/g, ',').split(',').map(part => part.trim());
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      const lat = Number(parts[0]);
+      const lng = Number(parts[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          showToast("坐标超出有效范围，请检查纬度和经度");
+          return;
+        }
+        setUserLocation(lat, lng, "自定义基准");
+        if (map) map.setZoomAndCenter(13, [lng, lat]);
+        closeInputModal();
+        showToast("已设为基准位置");
+        return;
+      }
+    }
+    showToast("格式有误，请按: 纬度, 经度 输入");
+  }
+
+  function applyPresetCoord(lat, lng, label) {
+    setUserLocation(lat, lng, label);
+    if (map) map.setZoomAndCenter(13, [lng, lat]);
+    closeInputModal();
+    showToast('基准设为：' + label);
+  }
+
+  /* ==========================================================================
+     视角控制
+     ========================================================================== */
+  function fitAllPoints(preserveDrawer = false) {
+    if (!map) return;
+    // 海南全岛经纬度范围覆盖。移动端默认折叠抽屉，避免南端点位被面板遮住。
+    map.setBounds(new AMap.Bounds([108.65, 18.15], [111.05, 20.12]));
+    if (!preserveDrawer && !window.matchMedia('(min-width: 900px)').matches) {
+      setDrawerState('collapsed');
+    }
+  }
+
+  function focusCityView(city) {
+    if (!map) return;
+    if (city === '海口') {
+      map.setBounds(new AMap.Bounds([110.25, 19.96], [110.42, 20.08]));
+    } else if (city === '文昌') {
+      map.setBounds(new AMap.Bounds([110.50, 19.50], [111.02, 20.06]));
+    } else if (city === '三亚') {
+      map.setBounds(new AMap.Bounds([109.28, 18.18], [109.80, 18.42]));
+    } else if (city === '临高') {
+      map.setZoomAndCenter(13, [109.6848, 19.9042]);
+    }
+  }
+
+  function showToast(text) {
+    const el = document.getElementById('status-toast');
+    el.innerText = text;
+    el.classList.add('show');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => {
+      el.classList.remove('show');
+    }, 2400);
+  }
+
+  /* ==========================================================================
+     移动端抽屉手势控制器
+     ========================================================================== */
+  let drawerState = 'half'; // 'collapsed' | 'half' | 'expanded'
+  const drawerEl = document.getElementById('bottom-drawer');
+  const handleEl = document.getElementById('drawer-handle');
+  const drawerListEl = document.getElementById('drawer-list');
+
+  function setDrawerState(state) {
+    drawerState = state;
+    drawerEl.classList.remove('collapsed', 'half', 'expanded');
+    drawerEl.classList.add(state);
+
+    const hintEl = document.getElementById('drawer-hint');
+    if (hintEl) {
+      if (state === 'collapsed') hintEl.innerText = "上滑查看列表";
+      else if (state === 'half') hintEl.innerText = "轻按折叠 / 上滑全屏";
+      else hintEl.innerText = "下滑折叠";
+    }
+
+    const fabGroup = document.getElementById('map-fab-group');
+    if (fabGroup) {
+      if (window.matchMedia('(min-width: 900px)').matches) {
+        fabGroup.style.opacity = '1';
+        fabGroup.style.pointerEvents = 'auto';
+      } else if (state === 'collapsed') {
+        fabGroup.style.bottom = 'calc(80px + var(--safe-bottom))';
+        fabGroup.style.opacity = '1';
+        fabGroup.style.pointerEvents = 'auto';
+      } else if (state === 'half') {
+        fabGroup.style.bottom = 'calc(48vh + 14px + var(--safe-bottom))';
+        fabGroup.style.opacity = '1';
+        fabGroup.style.pointerEvents = 'auto';
+      } else {
+        fabGroup.style.bottom = 'calc(88vh + 10px)';
+        fabGroup.style.opacity = '0';
+        fabGroup.style.pointerEvents = 'none';
+      }
+    }
+  }
+
+  function toggleDrawerState() {
+    if (drawerState === 'collapsed') setDrawerState('half');
+    else if (drawerState === 'half') setDrawerState('expanded');
+    else setDrawerState('collapsed');
+  }
+
+  let suppressDrawerClick = false;
+  handleEl.addEventListener('click', () => {
+    if (suppressDrawerClick) {
+      suppressDrawerClick = false;
+      return;
+    }
+    toggleDrawerState();
+  });
+  handleEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleDrawerState();
+    }
+  });
+
+  let touchStartY = 0;
+  handleEl.addEventListener('touchstart', (e) => {
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  handleEl.addEventListener('touchend', (e) => {
+    const deltaY = e.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(deltaY) > 35) {
+      suppressDrawerClick = true;
+      setTimeout(() => { suppressDrawerClick = false; }, 400);
+    }
+    if (deltaY > 35) {
+      if (drawerState === 'expanded') setDrawerState('half');
+      else if (drawerState === 'half') setDrawerState('collapsed');
+    } else if (deltaY < -35) {
+      if (drawerState === 'collapsed') setDrawerState('half');
+      else if (drawerState === 'half') setDrawerState('expanded');
+    }
+  });
+
+  if (drawerListEl) {
+    let listTouchStartY = 0;
+    drawerListEl.addEventListener('touchstart', (e) => {
+      listTouchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    drawerListEl.addEventListener('touchend', (e) => {
+      const deltaY = e.changedTouches[0].clientY - listTouchStartY;
+      if (drawerListEl.scrollTop <= 2 && deltaY > 55) {
+        if (drawerState === 'expanded') setDrawerState('half');
+        else if (drawerState === 'half') setDrawerState('collapsed');
+      }
+    });
+  }
+
+  let viewportResizeTimer = null;
+  function scheduleMapResize() {
+    clearTimeout(viewportResizeTimer);
+    viewportResizeTimer = setTimeout(() => {
+      if (!map) return;
+      map.resize();
+      if (!userLocation && currentCity === 'all') fitAllPoints(true);
+    }, 180);
+  }
+  window.addEventListener('resize', scheduleMapResize, { passive: true });
+  window.addEventListener('orientationchange', scheduleMapResize, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', scheduleMapResize, { passive: true });
+  }
+
+  window.addEventListener('DOMContentLoaded', initApp);
+</script>
+</body>
+</html>
