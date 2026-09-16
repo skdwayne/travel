@@ -741,6 +741,67 @@
     .marker-city.sy { --city-color: var(--color-purple); }
     .marker-city.lg { --city-color: var(--color-green); }
 
+    .marker-hub {
+      width: 32px;
+      height: 32px;
+      border: 2px solid #ffffff;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      line-height: 1;
+      box-shadow: 0 3px 9px rgba(0,0,0,0.25);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      touch-action: none;
+      user-select: none;
+    }
+    .marker-hub span {
+      pointer-events: none;
+    }
+    .marker-hub.lodging {
+      background: #8250df;
+      box-shadow: 0 0 0 2px rgba(130,80,223,0.2), 0 3px 9px rgba(0,0,0,0.25);
+    }
+    .marker-hub.transport {
+      background: #0969da;
+      box-shadow: 0 0 0 2px rgba(9,105,218,0.2), 0 3px 9px rgba(0,0,0,0.25);
+    }
+    .marker-hub:active {
+      transform: scale(0.92);
+    }
+
+    .marker-hub-summary {
+      display: flex;
+      border: 2px solid #ffffff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 3px 9px rgba(0,0,0,0.25);
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
+    }
+    .marker-hub-summary span {
+      min-width: 35px;
+      padding: 5px 6px;
+      color: #ffffff;
+      font-size: 10.5px;
+      font-weight: 800;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      pointer-events: none;
+    }
+    .marker-hub-summary .lodging {
+      background: #8250df;
+    }
+    .marker-hub-summary .transport {
+      background: #0969da;
+    }
+
     .marker-spot {
       width: 28px;
       height: 28px;
@@ -948,6 +1009,19 @@
       border-color: var(--color-black);
       color: #ffffff;
     }
+    .hub-info-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .hub-info-meta span {
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      font-size: 10px;
+      font-weight: 600;
+    }
 
     /* 状态提示浮层 (Toast) */
     .status-toast {
@@ -993,7 +1067,10 @@
       background: var(--bg-primary);
       border-radius: 8px;
       width: 100%;
-      max-width: 320px;
+      max-width: 370px;
+      max-height: calc(100dvh - 40px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       padding: 16px;
       display: flex;
       flex-direction: column;
@@ -1009,17 +1086,15 @@
       color: var(--text-secondary);
       line-height: 1.4;
     }
-    .modal-input {
-      width: 100%;
-      height: 32px;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      padding: 0 8px;
-      font-size: 12.5px;
-      outline: none;
+    .preset-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
-    .modal-input:focus {
-      border-color: var(--border-dark);
+    .preset-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
     }
     .preset-chips {
       display: flex;
@@ -1041,6 +1116,11 @@
       display: flex;
       justify-content: flex-end;
       gap: 8px;
+      position: sticky;
+      bottom: -16px;
+      padding-top: 8px;
+      padding-bottom: 16px;
+      background: var(--bg-primary);
     }
     .modal-btn {
       min-height: 44px;
@@ -1235,9 +1315,7 @@
     <!-- 悬浮操作按钮组 (FAB) -->
     <div class="fab-group" id="map-fab-group">
       <button class="fab-btn primary" title="定位当前位置" onclick="locateMe(true)">🎯</button>
-      <button class="fab-btn" title="输入自定义基准坐标" onclick="openInputModal()">📍</button>
-      <button class="fab-btn" title="查看海南全岛视野" onclick="fitAllPoints()">🗺️</button>
-      <button class="fab-btn" title="折叠/展开列表抽屉" onclick="toggleDrawerState()">📋</button>
+      <button class="fab-btn" title="选择住宿、交通枢纽或地标" onclick="openInputModal()">📍</button>
     </div>
 
     <!-- 状态 Toast 提示 -->
@@ -1263,25 +1341,52 @@
     </div>
   </aside>
 
-  <!-- 手动输入坐标模态框 -->
+  <!-- 快捷地点选择模态框 -->
   <div class="modal-overlay" id="input-modal">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="coord-modal-title">
-      <div class="modal-title" id="coord-modal-title">设置基准定位点</div>
-      <div class="modal-desc">可输入基准坐标（GCJ-02，纬度, 经度），系统将按距离由近及远智能重排美食与景点：</div>
-      <input type="text" class="modal-input" id="coord-input" inputmode="decimal" autocomplete="off" aria-label="输入纬度和经度，以逗号分隔" placeholder="例如: 20.0450, 110.3475">
-      
-      <div style="font-size:11px;color:var(--text-muted);">常用快捷地标：</div>
-      <div class="preset-chips">
-        <button type="button" class="chip" onclick="applyPresetCoord(20.0450, 110.3475, '海口·骑楼老街')">海口骑楼</button>
-        <button type="button" class="chip" onclick="applyPresetCoord(19.6150, 110.7528, '文昌·文南老街')">文昌老街</button>
-        <button type="button" class="chip" onclick="applyPresetCoord(18.2723, 109.7291, '三亚·后海村')">三亚后海</button>
-        <button type="button" class="chip" onclick="applyPresetCoord(18.2382, 109.5086, '三亚·第一市场')">第一市场</button>
-        <button type="button" class="chip" onclick="applyPresetCoord(18.2287, 109.6447, '三亚·亚龙湾')">亚龙湾</button>
+      <div class="modal-title" id="coord-modal-title">选择快捷地点</div>
+      <div class="modal-desc">选择住宿点、交通枢纽或行程地标，系统会将其设为基准位置并按距离重新排序。</div>
+
+      <div class="preset-group">
+        <div class="preset-group-title">住宿点</div>
+        <div class="preset-chips">
+          <button type="button" class="chip" onclick="applyPresetCoord(20.0442, 110.3441, '海口·舒居设计师民宿')">海口民宿</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(19.6156, 110.7560, '文昌·如家neo')">文昌酒店</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2723, 109.7291, '三亚·半海半山民宿')">后海民宿</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2287, 109.6447, '三亚·红树林度假酒店')">亚龙湾酒店</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2630, 109.4930, '三亚·金莎海景酒店')">三亚湾酒店</button>
+        </div>
+      </div>
+
+      <div class="preset-group">
+        <div class="preset-group-title">交通枢纽</div>
+        <div class="preset-chips">
+          <button type="button" class="chip" onclick="applyPresetCoord(19.9410, 110.4590, '海口美兰国际机场')">美兰机场</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(19.9800, 110.3360, '海口东站')">海口东站</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(20.0100, 110.3550, '海口汽车东站')">海口汽车东站</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(19.6110, 110.8000, '文昌站')">文昌站</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(19.6150, 110.7520, '文昌汽车站')">文昌汽车站</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.3150, 109.6070, '三亚站')">三亚站</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2430, 109.5090, '三亚汽车总站')">三亚汽车总站</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.3030, 109.4140, '三亚凤凰国际机场')">凤凰机场</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.3110, 109.7580, '蜈支洲岛客运码头')">蜈支洲码头</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2380, 109.3700, '西岛肖旗港码头')">西岛码头</button>
+        </div>
+      </div>
+
+      <div class="preset-group">
+        <div class="preset-group-title">景点地标</div>
+        <div class="preset-chips">
+          <button type="button" class="chip" onclick="applyPresetCoord(20.0450, 110.3475, '海口·骑楼老街')">海口骑楼</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(19.6150, 110.7528, '文昌·文南老街')">文昌老街</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2723, 109.7291, '三亚·后海村')">三亚后海</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2382, 109.5086, '三亚·第一市场')">第一市场</button>
+          <button type="button" class="chip" onclick="applyPresetCoord(18.2287, 109.6447, '三亚·亚龙湾')">亚龙湾</button>
+        </div>
       </div>
 
       <div class="modal-buttons">
-        <button class="modal-btn" onclick="closeInputModal()">取消</button>
-        <button class="modal-btn primary" onclick="submitCoordInput()">确认设定</button>
+        <button class="modal-btn" onclick="closeInputModal()">关闭</button>
       </div>
     </div>
   </div>
@@ -3246,6 +3351,181 @@
 ];
 
   /* ==========================================================================
+     住宿点与交通枢纽数据
+     住宿信息同步自《海南9天深度游 · 苹果美学海滨度假版》
+     ========================================================================== */
+  const LODGINGS = [
+    {
+      id: 'stay-haikou',
+      name: '舒居设计师民宿（海口骑楼老街店）',
+      city: '海口',
+      area: '骑楼老街',
+      address: '海口市龙华区骑楼老街核心片区（中山路、博爱路周边）',
+      stay: '9/18–9/19 · 1 晚',
+      source: '海南9天深度游',
+      lat: 20.0442,
+      lng: 110.3441,
+      icon: '🏨'
+    },
+    {
+      id: 'stay-wenchang',
+      name: '如家·neo（文昌文南老街孔庙沿江路店）',
+      city: '文昌',
+      area: '文城镇',
+      address: '文昌市文城镇沿江路与文南老街附近',
+      stay: '9/19–9/20 · 1 晚',
+      source: '海南9天深度游',
+      lat: 19.6156,
+      lng: 110.7560,
+      icon: '🏨'
+    },
+    {
+      id: 'stay-houhai',
+      name: '三亚半海半山海景民宿',
+      city: '三亚',
+      area: '后海村',
+      address: '三亚市海棠区后海村皇后湾路',
+      stay: '9/20–9/22 · 2 晚连住',
+      source: '海南9天深度游',
+      lat: 18.2723,
+      lng: 109.7291,
+      icon: '🏨'
+    },
+    {
+      id: 'stay-yalong',
+      name: '亚龙湾红树林度假酒店',
+      city: '三亚',
+      area: '亚龙湾',
+      address: '三亚市吉阳区亚龙湾国家旅游度假区龙海路',
+      stay: '9/22–9/24 · 2 晚连住',
+      source: '海南9天深度游',
+      lat: 18.2287,
+      lng: 109.6447,
+      icon: '🏨'
+    },
+    {
+      id: 'stay-sanyabay',
+      name: '三亚金莎海景酒店',
+      city: '三亚',
+      area: '三亚湾',
+      address: '三亚市天涯区三亚湾路椰梦长廊沿线',
+      stay: '9/24–9/26 · 2 晚连住',
+      source: '海南9天深度游',
+      lat: 18.2630,
+      lng: 109.4930,
+      icon: '🏨'
+    }
+  ];
+
+  const TRANSPORT_HUBS = [
+    {
+      id: 'transport-meilan-airport',
+      name: '海口美兰国际机场',
+      city: '海口',
+      type: '机场',
+      priority: true,
+      address: '海口市美兰区机场路',
+      lat: 19.9410,
+      lng: 110.4590,
+      icon: '✈️'
+    },
+    {
+      id: 'transport-haikou-east',
+      name: '海口东站',
+      city: '海口',
+      type: '高铁站',
+      priority: true,
+      address: '海口市龙华区南海大道',
+      lat: 19.9800,
+      lng: 110.3360,
+      icon: '🚄'
+    },
+    {
+      id: 'transport-haikou-bus-east',
+      name: '海口汽车东站',
+      city: '海口',
+      type: '汽车站',
+      address: '海口市琼山区海府路',
+      lat: 20.0100,
+      lng: 110.3550,
+      icon: '🚌'
+    },
+    {
+      id: 'transport-wenchang-station',
+      name: '文昌站',
+      city: '文昌',
+      type: '高铁站',
+      priority: true,
+      address: '文昌市文城镇',
+      lat: 19.6110,
+      lng: 110.8000,
+      icon: '🚄'
+    },
+    {
+      id: 'transport-wenchang-bus',
+      name: '文昌汽车站',
+      city: '文昌',
+      type: '汽车站',
+      address: '文昌市文城镇新风路',
+      lat: 19.6150,
+      lng: 110.7520,
+      icon: '🚌'
+    },
+    {
+      id: 'transport-sanya-station',
+      name: '三亚站',
+      city: '三亚',
+      type: '高铁站',
+      priority: true,
+      address: '三亚市吉阳区育新路',
+      lat: 18.3150,
+      lng: 109.6070,
+      icon: '🚄'
+    },
+    {
+      id: 'transport-sanya-bus',
+      name: '三亚汽车总站',
+      city: '三亚',
+      type: '汽车站',
+      address: '三亚市天涯区解放路',
+      lat: 18.2430,
+      lng: 109.5090,
+      icon: '🚌'
+    },
+    {
+      id: 'transport-phoenix-airport',
+      name: '三亚凤凰国际机场',
+      city: '三亚',
+      type: '机场',
+      priority: true,
+      address: '三亚市天涯区凤凰路',
+      lat: 18.3030,
+      lng: 109.4140,
+      icon: '✈️'
+    },
+    {
+      id: 'transport-wuzhizhou-pier',
+      name: '蜈支洲岛客运码头',
+      city: '三亚',
+      type: '码头',
+      address: '三亚市海棠区后海村附近',
+      lat: 18.3110,
+      lng: 109.7580,
+      icon: '⛴️'
+    },
+    {
+      id: 'transport-west-island-pier',
+      name: '西岛肖旗港码头',
+      city: '三亚',
+      type: '码头',
+      address: '三亚市天涯区肖旗港',
+      lat: 18.2380,
+      lng: 109.3700,
+      icon: '⛴️'
+    }
+  ];
+
+  /* ==========================================================================
      核心数学算法：坐标转换 (WGS-84 -> GCJ-02) 与 直线球面测距 (Haversine)
      ========================================================================== */
   const PI = Math.PI;
@@ -3316,6 +3596,7 @@
   // Marker 引用与带类型命名空间的活跃状态，避免美食/景点 ID 冲突
   const foodMarkerRegistry = new Map();
   const spotMarkerRegistry = new Map();
+  const hubMarkerRegistry = new Map();
   const CITY_CENTERS = {
     '海口': [110.335, 20.035],
     '文昌': [110.780, 19.610],
@@ -3328,6 +3609,9 @@
   let spotMarkersGroup = null;
   let userLocGroup = null;
   let guideLineGroup = null;
+  let hubMarkersGroup = null;
+  let activeHubId = null;
+  let mapDragLocked = false;
   let foodMarkersAggregated = false;
   let mapTileWatchdog = null;
 
@@ -3359,6 +3643,171 @@
     const cityClass = city === '文昌' ? 'wc' : (city === '三亚' ? 'sy' : (city === '临高' ? 'lg' : 'hk'));
     const suffix = currentMode === 'food' ? '家' : '处';
     return '<div class="marker-city ' + cityClass + '"><strong>' + city + '</strong><span>' + count + suffix + '</span></div>';
+  }
+
+  function getHubMarkerContent(item) {
+    const hubClass = item.kind === 'lodging' ? 'lodging' : 'transport';
+    return '<div class="marker-hub ' + hubClass + '" title="' + item.name + '"><span>' + item.icon + '</span></div>';
+  }
+
+  function getHubSummaryContent(lodgingCount, transportCount) {
+    return (
+      '<div class="marker-hub-summary">' +
+        '<span class="lodging">🏨' + lodgingCount + '</span>' +
+        '<span class="transport">🚄' + transportCount + '</span>' +
+      '</div>'
+    );
+  }
+
+  function lockMapDrag() {
+    if (!map || mapDragLocked) return;
+    mapDragLocked = true;
+    map.setStatus({ dragEnable: false });
+  }
+
+  function releaseMapDrag() {
+    if (!map || !mapDragLocked) return;
+    mapDragLocked = false;
+    map.setStatus({ dragEnable: true });
+  }
+
+  function protectMarkerFromMapDrag(marker) {
+    const stopEvent = (event) => {
+      lockMapDrag();
+      if (event && event.originEvent) event.originEvent.stopPropagation();
+    };
+    marker.on('mousedown', stopEvent);
+    marker.on('touchstart', stopEvent);
+  }
+
+  // 捕获阶段先于 AMap 的地图拖拽处理：从 Marker 上按下时锁定拖拽，
+  // 只有下一次从地图空白区域按下才重新开启，彻底避免单击后图标黏住鼠标。
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target;
+    const isMarker = target && typeof target.closest === 'function' && target.closest('.amap-marker');
+    if (isMarker) {
+      lockMapDrag();
+    } else if (target && typeof target.closest === 'function' && target.closest('#map-container')) {
+      releaseMapDrag();
+    }
+  }, { capture: true, passive: true });
+
+  function getHubAmapUrl(item) {
+    return 'https://uri.amap.com/marker?position=' + item.lng + ',' + item.lat +
+      '&name=' + encodeURIComponent(item.name) +
+      '&src=hainan-food-map&coordinate=gaode&callnative=1';
+  }
+
+  function renderHubMarkers() {
+    if (!map || !hubMarkersGroup) return;
+
+    clearOverlayGroup(hubMarkersGroup);
+    hubMarkerRegistry.clear();
+
+    const allHubItems = [
+      ...LODGINGS.map(item => ({ ...item, kind: 'lodging' })),
+      ...TRANSPORT_HUBS.map(item => ({ ...item, kind: 'transport' }))
+    ];
+
+    const lowZoomAllIsland = currentCity === 'all' && map.getZoom() < 9.5;
+    if (lowZoomAllIsland) {
+      const summaryMarkers = ['海口', '文昌', '三亚', '临高'].map(city => {
+        const cityItems = allHubItems.filter(item => item.city === city);
+        if (!cityItems.length || !CITY_CENTERS[city]) return null;
+        const lodgingCount = cityItems.filter(item => item.kind === 'lodging').length;
+        const transportCount = cityItems.filter(item => item.kind === 'transport').length;
+        const marker = new AMap.Marker({
+          position: CITY_CENTERS[city],
+          content: getHubSummaryContent(lodgingCount, transportCount),
+          offset: new AMap.Pixel(0, -52),
+          anchor: 'center',
+          title: city + '住宿与交通汇总',
+          zIndex: 130,
+          bubble: false,
+          draggable: false
+        });
+        marker.on('click', (event) => {
+          if (event && event.originEvent) event.originEvent.stopPropagation();
+          const filterButton = [...document.querySelectorAll('.filter-pill')]
+            .find(item => item.textContent.trim() === city);
+          setCityFilter(city, filterButton);
+        });
+        protectMarkerFromMapDrag(marker);
+        return marker;
+      }).filter(Boolean);
+      hubMarkersGroup.addOverlays(summaryMarkers);
+      return;
+    }
+
+    const hubItems = allHubItems.filter(item => currentCity === 'all' || item.city === currentCity);
+
+    const markers = hubItems.map(item => {
+      const marker = new AMap.Marker({
+        position: [item.lng, item.lat],
+        content: getHubMarkerContent(item),
+        offset: new AMap.Pixel(-16, -16),
+        anchor: 'center',
+        title: item.name,
+        zIndex: item.kind === 'lodging' ? 125 : 115,
+        extData: item,
+        bubble: false,
+        draggable: false
+      });
+      marker.on('click', (event) => {
+        if (event && event.originEvent) event.originEvent.stopPropagation();
+        activeHubId = item.id;
+        openHubPopup(item);
+      });
+      protectMarkerFromMapDrag(marker);
+      hubMarkerRegistry.set(item.id, { marker, item });
+      return marker;
+    });
+
+    hubMarkersGroup.addOverlays(markers);
+  }
+
+  function buildHubPopupHtml(item) {
+    const isLodging = item.kind === 'lodging';
+    const typeLabel = isLodging ? '住宿点' : item.type;
+    const description = isLodging
+      ? '预订住宿 · ' + item.area
+      : item.type + ' · 行程交通节点';
+    const sourceTag = item.source ? '<span>参考：' + item.source + '</span>' : '';
+    const scheduleTag = item.stay ? '<span>' + item.stay + '</span>' : '';
+    const amapUrl = getHubAmapUrl(item);
+
+    return (
+      '<div class="custom-info-card opening" id="hub-card-' + item.id + '">' +
+        '<div class="custom-info-header">' +
+          '<div class="custom-info-title-group">' +
+            '<span>' + item.icon + '</span>' +
+            '<span class="custom-info-title">' + item.name + '</span>' +
+          '</div>' +
+          '<button type="button" class="custom-info-close" onclick="closeCustomPopup()">✕</button>' +
+        '</div>' +
+        '<div class="hub-info-meta">' +
+          '<span>' + typeLabel + '</span>' +
+          scheduleTag +
+          sourceTag +
+        '</div>' +
+        '<div class="custom-info-desc">' + description + '</div>' +
+        '<div class="custom-info-addr">' + item.address + '</div>' +
+        '<div class="custom-info-actions">' +
+          '<a class="custom-info-btn nav" href="' + amapUrl + '" target="_blank" rel="noopener noreferrer">在高德地图中打开</a>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function openHubPopup(item) {
+    if (!item.lat || !item.lng || !map || !currentInfoWindow) return;
+    lastPopupOpenTime = Date.now();
+    currentInfoWindow.setContent(buildHubPopupHtml(item));
+    currentInfoWindow.open(map, [item.lng, item.lat]);
+    setTimeout(() => {
+      const card = document.getElementById('hub-card-' + item.id);
+      if (card) card.classList.remove('opening');
+    }, 350);
   }
 
   function getSpotMarkerContent(isActive) {
@@ -3464,6 +3913,7 @@
     currentInfoWindow = null;
     foodMarkerRegistry.clear();
     spotMarkerRegistry.clear();
+    hubMarkerRegistry.clear();
     clearMapTileWatchdog();
     showMapFallback('sdk');
     document.querySelectorAll('.fab-btn').forEach(btn => {
@@ -3513,8 +3963,9 @@
     spotMarkersGroup = new AMap.OverlayGroup();
     userLocGroup = new AMap.OverlayGroup();
     guideLineGroup = new AMap.OverlayGroup();
+    hubMarkersGroup = new AMap.OverlayGroup();
 
-    map.add([foodMarkersGroup, spotMarkersGroup, userLocGroup, guideLineGroup]);
+    map.add([foodMarkersGroup, spotMarkersGroup, hubMarkersGroup, userLocGroup, guideLineGroup]);
 
     // 初始化自定义弹窗 (isCustom: true，offset: -38px 拉开 25px 物理安全间距，防止触碰Marker时误触按钮)
     currentInfoWindow = new AMap.InfoWindow({
@@ -3533,9 +3984,11 @@
     // 手机浏览器的地址栏和键盘会改变可视高度，初始化后多次校正容器尺寸。
     // 大范围缩放时使用城市汇总标记，避免海口/三亚密集点位叠成一团。
     map.on('zoomend', () => {
-      if (currentMode !== 'food') return;
-      const shouldAggregate = currentCity === 'all' && !searchKeyword && map.getZoom() < 9.5;
-      if (shouldAggregate !== foodMarkersAggregated) renderFoodMode();
+      if (currentMode === 'food') {
+        const shouldAggregate = currentCity === 'all' && !searchKeyword && map.getZoom() < 9.5;
+        if (shouldAggregate !== foodMarkersAggregated) renderFoodMode();
+      }
+      renderHubMarkers();
     });
 
     // 初始渲染当前数据
@@ -3628,6 +4081,8 @@
       renderSpotMode();
     }
 
+    renderHubMarkers();
+
     const fallback = document.getElementById('map-fallback');
     if (fallback && fallback.classList.contains('show')) {
       renderOfflineCityOverview();
@@ -3694,6 +4149,7 @@
               .find(item => item.textContent.trim() === city);
             setCityFilter(city, filterButton);
           });
+          protectMarkerFromMapDrag(marker);
           markers.push(marker);
         });
       } else {
@@ -3717,6 +4173,7 @@
             selectItem(item.id, 'food');
             openCustomPopup(item, 'food');
           });
+          protectMarkerFromMapDrag(marker);
 
           markers.push(marker);
           foodMarkerRegistry.set(item.id, { marker, item });
@@ -3777,6 +4234,7 @@
             chooseSpot(item);
             openCustomPopup(item, 'spot');
           });
+          protectMarkerFromMapDrag(marker);
 
           markers.push(marker);
           spotMarkerRegistry.set(item.id, { marker, item });
@@ -3808,6 +4266,7 @@
           }
           openCustomPopup(selectedSpot, 'spot');
         });
+        protectMarkerFromMapDrag(spotMarker);
         spotMarkersGroup.addOverlays([spotMarker]);
         spotMarkerRegistry.set(selectedSpot.id, { marker: spotMarker, item: selectedSpot });
       }
@@ -3851,6 +4310,7 @@
             highlightSpotFoodPair(selectedSpot, item);
             openCustomPopup(item, 'food', selectedSpot);
           });
+          protectMarkerFromMapDrag(marker);
 
           nearMarkers.push(marker);
           foodMarkerRegistry.set(item.id, { marker, item });
@@ -4362,35 +4822,10 @@
      ========================================================================== */
   function openInputModal() {
     document.getElementById('input-modal').classList.add('show');
-    if (userLocation) {
-      document.getElementById('coord-input').value = userLocation.lat.toFixed(4) + ', ' + userLocation.lng.toFixed(4);
-    }
   }
 
   function closeInputModal() {
     document.getElementById('input-modal').classList.remove('show');
-  }
-
-  function submitCoordInput() {
-    const val = document.getElementById('coord-input').value.trim();
-    if (!val) return;
-    const parts = val.replace(/，/g, ',').split(',').map(part => part.trim());
-    if (parts.length === 2 && parts[0] && parts[1]) {
-      const lat = Number(parts[0]);
-      const lng = Number(parts[1]);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-          showToast("坐标超出有效范围，请检查纬度和经度");
-          return;
-        }
-        setUserLocation(lat, lng, "自定义基准");
-        if (map) map.setZoomAndCenter(13, [lng, lat]);
-        closeInputModal();
-        showToast("已设为基准位置");
-        return;
-      }
-    }
-    showToast("格式有误，请按: 纬度, 经度 输入");
   }
 
   function applyPresetCoord(lat, lng, label) {
