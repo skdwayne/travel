@@ -346,19 +346,6 @@
       background-color: transparent;
     }
 
-    /* 透明叠加层位于瓦片画布之上、Marker 之下；在线瓦片可用时仅作极淡地理参照。 */
-    #map-container::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 50;
-      pointer-events: none;
-      opacity: 0.16;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 1000'%3E%3Cpath d='M424 70 C494 42 575 86 611 154 C646 220 620 287 659 353 C700 423 754 476 750 552 C745 642 689 716 611 760 C531 805 439 786 375 730 C313 676 277 610 245 540 C211 466 203 382 248 315 C289 253 364 226 381 166 C391 123 391 86 424 70 Z' fill='%23c8bda9'/%3E%3Cpath d='M320 328 C396 354 470 363 562 340' fill='none' stroke='%23ffffff' stroke-width='10' stroke-linecap='round'/%3E%3Cpath d='M340 470 C424 505 512 512 617 476' fill='none' stroke='%23ffffff' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-size: cover;
-      background-position: center;
-    }
-
     /* 右下侧悬浮操作组 (FAB) */
     .fab-group {
       position: absolute;
