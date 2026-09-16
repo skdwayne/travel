@@ -3745,7 +3745,7 @@
       const marker = new AMap.Marker({
         position: [item.lng, item.lat],
         content: getHubMarkerContent(item),
-        offset: new AMap.Pixel(-16, -16),
+        offset: new AMap.Pixel(0, 0),
         anchor: 'center',
         title: item.name,
         zIndex: item.kind === 'lodging' ? 125 : 115,
@@ -3984,6 +3984,18 @@
     // 手机浏览器的地址栏和键盘会改变可视高度，初始化后多次校正容器尺寸。
     // 大范围缩放时使用城市汇总标记，避免海口/三亚密集点位叠成一团。
     map.on('zoomend', () => {
+      if (map.getZoom() < 9.5 && currentCity !== 'all') {
+        currentCity = 'all';
+        selectedSpot = null;
+        activeItemId = null;
+        document.querySelectorAll('.filter-pill').forEach(el => {
+          el.classList.toggle('active', el.textContent.trim() === '全岛');
+        });
+        if (currentInfoWindow) currentInfoWindow.close();
+        renderCurrentState();
+        return;
+      }
+
       if (currentMode === 'food') {
         const shouldAggregate = currentCity === 'all' && !searchKeyword && map.getZoom() < 9.5;
         if (shouldAggregate !== foodMarkersAggregated) renderFoodMode();
@@ -4734,7 +4746,7 @@
     const userMarker = new AMap.Marker({
       position: [lng, lat],
       content: '<div class="marker-user" title="' + label + '"></div>',
-      offset: new AMap.Pixel(-7, -7),
+      offset: new AMap.Pixel(0, 0),
       anchor: 'center',
       zIndex: 150
     });
@@ -4828,9 +4840,56 @@
     document.getElementById('input-modal').classList.remove('show');
   }
 
+  function resolvePresetCity(label) {
+    if (label.includes('海口') || label.includes('美兰') || label.includes('舒居')) return '海口';
+    if (label.includes('文昌') || label.includes('如家')) return '文昌';
+    if (
+      label.includes('三亚') ||
+      label.includes('后海') ||
+      label.includes('亚龙湾') ||
+      label.includes('第一市场') ||
+      label.includes('凤凰') ||
+      label.includes('蜈支洲') ||
+      label.includes('西岛') ||
+      label.includes('半海半山') ||
+      label.includes('红树林') ||
+      label.includes('金莎')
+    ) return '三亚';
+    if (label.includes('临高')) return '临高';
+    return null;
+  }
+
+  function centerPresetLocation(lat, lng) {
+    if (!map) return;
+    const targetZoom = Math.max(map.getZoom(), 14);
+    // 第三个参数 true 表示立即完成缩放和居中，不播放长距离平移动画。
+    map.setZoomAndCenter(targetZoom, [lng, lat], true);
+  }
+
   function applyPresetCoord(lat, lng, label) {
+    const presetCity = resolvePresetCity(label);
+    if (presetCity) {
+      currentCity = presetCity;
+      document.querySelectorAll('.filter-pill').forEach(el => {
+        el.classList.toggle('active', el.textContent.trim() === presetCity);
+      });
+    }
+
+    selectedSpot = null;
+    activeItemId = null;
+    searchKeyword = '';
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) searchInput.value = '';
+    const searchClear = document.getElementById('search-clear-btn');
+    if (searchClear) searchClear.style.display = 'none';
+    if (currentInfoWindow) currentInfoWindow.close();
+
+    if (!window.matchMedia('(min-width: 900px)').matches) {
+      setDrawerState('collapsed');
+    }
+
     setUserLocation(lat, lng, label);
-    if (map) map.setZoomAndCenter(13, [lng, lat]);
+    centerPresetLocation(lat, lng);
     closeInputModal();
     showToast('基准设为：' + label);
   }
